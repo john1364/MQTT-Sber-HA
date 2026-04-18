@@ -207,6 +207,7 @@ class StateTracker:
         """
         entity_id = event.data.get("entity_id", "")
         new_state  = event.data.get("new_state")
+        old_state  = event.data.get("old_state")
 
         if new_state is None or new_state.state in ("unavailable", "unknown"):
             # Игнорируем недоступные состояния
@@ -215,10 +216,10 @@ class StateTracker:
         # Находим все устройства Сбера привязанные к этой сущности
         devices = self._get_devices()
         for device_id, device in devices.items():
-            self._process_device_state_change(device_id, device, entity_id, new_state)
+            self._process_device_state_change(device_id, device, entity_id, new_state, old_state)
 
     def _process_device_state_change(
-        self, device_id: str, device: dict, changed_entity_id: str, new_state
+        self, device_id: str, device: dict, changed_entity_id: str, new_state, old_state=None
     ) -> None:
         """Проверяет принадлежность changed_entity_id к устройству,
         формирует payload через state_builder и публикует в Сбер.
@@ -306,6 +307,15 @@ class StateTracker:
                 if s.get("key") == "on_off" and s.get("value", {}).get("bool_value") == is_on:
                     return  # состояние не изменилось
 
+        # ── DevTools: логируем изменение состояния HA ─────────────────────
+        try:
+            from .api_devtools import devtools_track_ha_state_change
+            state_before = old_state.state if old_state else "—"
+            state_after = new_state.state if new_state else "unknown"
+            devtools_track_ha_state_change(device_id, changed_entity_id, state_before, state_after, device_type)
+        except Exception:
+            pass
+
         # ── Сценарная кнопка — button_event только при реальном срабатывании ──
         if device_type == DEVICE_TYPE_SCENARIO_BUTTON:
             entity_id = attrs.get("entity_id", "")
@@ -326,6 +336,21 @@ class StateTracker:
             else:
                 return
 
+            # Устанавливаем контекст для DevTools tracking
+            try:
+                from .api_devtools import devtools_set_tracking_ha_state_context
+                devtools_set_tracking_ha_state_context({
+                    "entity_id": entity_id,
+                    "state_before": "—",
+                    "state_after": state.state if state else "unknown",
+                    "device_id": device_id,
+                    "device_type": "scenario_button",
+                    "trigger": "scenario_button_event",
+                    "button_event": event,
+                })
+            except Exception:
+                pass
+
             _LOGGER.debug("StateTracker %s (scenario_button): button_event", device_id)
             self._publish_status(payload)
             self._hass.async_create_task(
@@ -337,6 +362,22 @@ class StateTracker:
         payload = build_current_state_payload(self._hass, device_id, device, self._serializer)
         if not payload:
             return
+
+        # Устанавливаем контекст для DevTools tracking
+        try:
+            from .api_devtools import devtools_set_tracking_ha_state_context
+            state_before = old_state.state if old_state else "—"
+            state_after = new_state.state if new_state else "unknown"
+            devtools_set_tracking_ha_state_context({
+                "entity_id": changed_entity_id,
+                "state_before": state_before,
+                "state_after": state_after,
+                "device_id": device_id,
+                "device_type": device_type,
+                "trigger": "state_change",
+            })
+        except Exception:
+            pass
 
         _LOGGER.debug("StateTracker %s (%s): публикуем состояние", device_id, device_type)
         self._publish_status(payload)

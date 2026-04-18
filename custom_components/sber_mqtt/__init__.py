@@ -330,6 +330,19 @@ def _make_on_status_request(
         for device_id, device in targets.items():
             payload = build_current_state_payload(hass, device_id, device, serializer)
             if payload:
+                # Устанавливаем контекст для DevTools tracking
+                try:
+                    from .api_devtools import devtools_set_tracking_ha_state_context
+                    devtools_set_tracking_ha_state_context({
+                        "entity_id": "—",
+                        "state_before": "—",
+                        "state_after": "—",
+                        "device_id": device_id,
+                        "device_type": device.get("device_type", "unknown"),
+                        "trigger": "sber_status_request",
+                    })
+                except Exception:
+                    pass
                 _LOGGER.info("Sber status payload for %s: %s", device_id, payload)
                 mqtt_client.publish_status(payload)
             else:

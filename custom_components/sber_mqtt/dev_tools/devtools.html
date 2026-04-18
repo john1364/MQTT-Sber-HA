@@ -85,17 +85,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 /* ── Commands log ── */
 .cmd-log{background:var(--bg);border:1px solid var(--border);border-radius:6px;height:480px;overflow-y:auto;font-family:var(--mono);font-size:11px}
-.cmd-entry{border-bottom:1px solid var(--border);padding:8px 12px;cursor:pointer;transition:background .1s}
+.cmd-entry{border-bottom:1px solid var(--border);padding:8px 12px;transition:background .1s}
 .cmd-entry:last-child{border-bottom:none}
 .cmd-entry:hover{background:var(--card2)}
 .cmd-entry.expanded{background:var(--card2)}
-.cmd-meta{display:flex;align-items:center;gap:10px;margin-bottom:0}
+.cmd-meta{display:flex;align-items:center;gap:10px;margin-bottom:0;cursor:pointer}
+.cmd-meta:hover{opacity:.85}
+.cmd-preview{cursor:pointer;user-select:none}
+.cmd-preview:hover{opacity:.7}
 .cmd-ts{color:var(--muted);font-size:10px;white-space:nowrap}
 .cmd-topic{color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
 .cmd-preview{color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
-.cmd-detail{margin-top:8px;display:none}
+.cmd-detail{margin-top:8px;display:none;position:relative}
 .cmd-detail pre{background:var(--card);border:1px solid var(--border);border-radius:4px;padding:10px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;color:var(--text);line-height:1.5}
 .cmd-entry.expanded .cmd-detail{display:block}
+.cmd-copy{position:absolute;top:6px;right:6px;background:var(--card2);border:1px solid var(--border);color:var(--muted);border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer;line-height:1.4}
+.cmd-copy:hover{color:var(--text);border-color:var(--muted2)}
 .cmd-empty{text-align:center;padding:60px 20px;color:var(--muted)}
 
 /* ── Direction arrows in command log ── */
@@ -183,8 +188,6 @@ label.fg-label{display:block;font-size:11px;font-weight:600;color:var(--muted);m
       Команды ←Сбер
       <span class="badge badge-count" id="cmdCountBadge">0</span>
     </button>
-    <div class="nav-sep"></div>
-    <div class="nav-section">Отслеживание</div>
     <button class="nav-item" data-panel="tracking" onclick="switchPanel('tracking')">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
       Отследить устройство
@@ -511,6 +514,10 @@ label.fg-label{display:block;font-size:11px;font-weight:600;color:var(--muted);m
               <span class="cmd-dir cmd-dir-in">↓</span> Запрос статуса
             </label>
             <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer">
+              <input type="checkbox" class="tracking-type-filter" value="ha_state_change" checked onchange="renderTrackingLog()">
+              <span class="cmd-dir cmd-dir-out">~</span> Изменение состояния HA
+            </label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer">
               <input type="checkbox" class="tracking-type-filter" value="ha_command" checked onchange="renderTrackingLog()">
               <span class="cmd-dir cmd-dir-out">→</span> Команда в HA
             </label>
@@ -659,7 +666,7 @@ let stateDevices = [];
 async function loadStateDevices() {
   try {
     const d = await apiFetch('/devices');
-    stateDevices = d.devices || [];
+    stateDevices = (d.devices || []).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
     const sel = document.getElementById('stateDeviceSelect');
     sel.innerHTML = '<option value="">— Выберите устройство —</option>';
     stateDevices.forEach(dev => {
@@ -891,14 +898,15 @@ function renderCommands() {
       ? `<span class="cmd-dir cmd-dir-out">→ out</span>`
       : `<span class="cmd-dir cmd-dir-in">← in</span>`;
     const arrow = isOut ? '↑' : '↓';
-    return `<div class="cmd-entry ${dir}" id="cmd-${i}" onclick="toggleCmd(${i})">
-      <div class="cmd-meta">
+    return `<div class="cmd-entry ${dir}" id="cmd-${i}">
+      <div class="cmd-meta" onclick="toggleCmd(${i})">
         <span class="cmd-ts">${fmtTime(c.ts)}</span>
         ${dirBadge}
         <span class="cmd-topic" title="${escH(c.topic)}">${arrow} …/${escH(topicShort)}</span>
       </div>
-      <div class="cmd-preview">${escH(preview)}${preview.length < JSON.stringify(c.payload).length ? '…' : ''}</div>
+      <div class="cmd-preview" onclick="toggleCmd(${i})">${escH(preview)}${preview.length < JSON.stringify(c.payload).length ? '…' : ''}</div>
       <div class="cmd-detail">
+        <button class="cmd-copy" onclick="copyCmdContent(this, event)">Копировать</button>
         <div style="font-size:10px;color:var(--muted);margin-bottom:4px">📍 ${escH(c.topic)}</div>
         <pre>${escH(JSON.stringify(c.payload, null, 2))}</pre>
       </div>
@@ -1052,7 +1060,7 @@ let trackingEventSource = null;
 async function loadTrackingDevices() {
   try {
     const d = await apiFetch('/devices');
-    trackingDevices = d.devices || [];
+    trackingDevices = (d.devices || []).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
     const sel = document.getElementById('trackingDeviceSelect');
     sel.innerHTML = '<option value="">— Выберите устройство —</option>';
     trackingDevices.forEach(dev => {
@@ -1159,6 +1167,21 @@ function renderTrackingLog() {
     let preview = '';
     let detailHTML = '';
     switch (eventType) {
+      case 'ha_state_change':
+        eventBadge = '<span class="cmd-dir cmd-dir-out" style="background:var(--warn-lt);color:var(--warn)">~ Изменение</span>';
+        const p = c.payload || {};
+        preview = `${escH(p.entity_id || '')}: ${escH(String(p.state_before))} → ${escH(String(p.state_after))}`;
+        detailHTML = `<div style="font-size:10px;color:var(--muted);margin-bottom:4px">📍 ${escH(c.topic)}</div>
+          <div style="font-size:10px;color:var(--accent);margin-bottom:6px">Тип: <b>ha_state_change</b></div>
+          <div style="margin-bottom:8px">
+            <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px">🔄 Изменение состояния HA:</div>
+            <div style="font-size:11px;color:var(--text);padding:6px 8px;background:var(--bg);border-radius:4px;border-left:3px solid var(--warn)">
+              <div>Сущность: <code style="color:var(--accent)">${escH(p.entity_id || '—')}</code></div>
+              <div>Тип устройства: <b>${escH(p.device_type || '—')}</b></div>
+              <div>Состояние: <span style="color:var(--warn)">${escH(String(p.state_before))}</span> → <span style="color:var(--primary-text)">${escH(String(p.state_after))}</span></div>
+            </div>
+          </div>`;
+        break;
       case 'sber_command':
         eventBadge = '<span class="cmd-dir cmd-dir-in">↓ Сбер</span>';
         preview = JSON.stringify(c.payload).slice(0, 120);
@@ -1199,8 +1222,24 @@ function renderTrackingLog() {
       case 'ha_status_update':
         eventBadge = '<span class="cmd-dir cmd-dir-out">↑ Статус</span>';
         preview = JSON.stringify(c.payload).slice(0, 120);
+        const ctx = c.ha_state_context;
+        let ctxBlock = '';
+        if (ctx) {
+          let triggerLabel = 'Изменение состояния';
+          if (ctx.trigger === 'scenario_button_event') triggerLabel = 'Сценарная кнопка';
+          else if (ctx.trigger === 'sber_status_request') triggerLabel = 'Запрос от Сбера';
+          ctxBlock = `<div style="margin-bottom:8px">
+            <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px">🔄 ${triggerLabel}:</div>
+            <div style="font-size:11px;color:var(--text);padding:6px 8px;background:var(--bg);border-radius:4px;border-left:3px solid var(--primary-text)">
+              <div>Сущность: <code style="color:var(--accent)">${escH(ctx.entity_id || '—')}</code></div>
+              <div>Состояние: <span style="color:var(--warn)">${escH(String(ctx.state_before))}</span> → <span style="color:var(--primary-text)">${escH(String(ctx.state_after))}</span></div>
+              ${ctx.button_event ? `<div>Событие кнопки: <b>${escH(ctx.button_event)}</b></div>` : ''}
+            </div>
+          </div>`;
+        }
         detailHTML = `<div style="font-size:10px;color:var(--muted);margin-bottom:4px">📍 ${escH(c.topic)}</div>
           <div style="font-size:10px;color:var(--accent);margin-bottom:6px">Тип: <b>${eventType}</b></div>
+          ${ctxBlock}
           <pre>${escH(JSON.stringify(c.payload, null, 2))}</pre>`;
         break;
       case 'ha_config_update':
@@ -1225,14 +1264,14 @@ function renderTrackingLog() {
           <pre>${escH(JSON.stringify(c.payload, null, 2))}</pre>`;
     }
     const arrow = isOut ? '↑' : '↓';
-    return `<div class="cmd-entry ${dir}" id="tcmd-${i}" onclick="toggleTrackingCmd(${i})">
-      <div class="cmd-meta">
+    return `<div class="cmd-entry ${dir}" id="tcmd-${i}">
+      <div class="cmd-meta" onclick="toggleTrackingCmd(${i})">
         <span class="cmd-ts">${fmtTime(c.ts)}</span>
         ${eventBadge}
         <span class="cmd-topic" title="${escH(c.topic)}">${arrow} …/${escH(topicShort)}</span>
       </div>
-      <div class="cmd-preview">${escH(preview)}${preview.length < JSON.stringify(c.payload).length && eventType !== 'ha_command' ? '…' : ''}</div>
-      <div class="cmd-detail">${detailHTML}</div>
+      <div class="cmd-preview" onclick="toggleTrackingCmd(${i})">${escH(preview)}${preview.length < JSON.stringify(c.payload).length && eventType !== 'ha_command' ? '…' : ''}</div>
+      <div class="cmd-detail">${detailHTML}<button class="cmd-copy" onclick="copyCmdContent(this, event)">Копировать</button></div>
     </div>`;
   }).join('');
   if (document.getElementById('trackingAutoScroll').checked) { log.scrollTop = 0; }
@@ -1241,6 +1280,50 @@ function renderTrackingLog() {
 function toggleTrackingCmd(i) {
   const el = document.getElementById('tcmd-' + i);
   if (el) el.classList.toggle('expanded');
+}
+
+function copyCmdContent(btn, event) {
+  if (event) event.stopPropagation();
+  const detail = btn.parentElement;
+  const pre = detail.querySelector('pre');
+  if (!pre) { toast('Нечего копировать', 'err'); return; }
+  const text = pre.textContent || pre.innerText;
+
+  // Reliable clipboard copy: create temporary textarea, select content, copy
+  const tmp = document.createElement('textarea');
+  tmp.value = text;
+  tmp.style.position = 'fixed';
+  tmp.style.left = '-9999px';
+  tmp.style.top = '-9999px';
+  tmp.style.opacity = '0';
+  document.body.appendChild(tmp);
+  tmp.select();
+
+  try {
+    // Try clipboard API first
+    navigator.clipboard.writeText(text).then(() => {
+      const orig = btn.textContent;
+      btn.textContent = '✓ Скопировано';
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+      toast('Скопировано в буфер обмена', 'ok');
+    }).catch(() => {
+      // Clipboard API failed — use execCommand fallback
+      document.execCommand('copy');
+      const orig = btn.textContent;
+      btn.textContent = '✓ Скопировано';
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+      toast('Скопировано в буфер обмена', 'ok');
+    });
+  } catch (e) {
+    // execCommand fallback
+    document.execCommand('copy');
+    const orig = btn.textContent;
+    btn.textContent = '✓ Скопировано';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+    toast('Скопировано в буфер обмена', 'ok');
+  } finally {
+  document.body.removeChild(tmp);
+  }
 }
 
 async function clearTrackingBuffer() {
