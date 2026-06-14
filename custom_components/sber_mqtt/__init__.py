@@ -92,12 +92,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         on_config_request=_make_on_config_request(device_registry, serializer),
     )
 
+    # Устанавливаем колбэк для повторной отправки config/status после переподключения
+    mqtt_client.set_on_reconnect_callback(
+        lambda: _async_on_reconnect(hass, entry.entry_id, device_registry, serializer)
+    )
+    
     connected = await hass.async_add_executor_job(mqtt_client.connect)
     if not connected:
         _LOGGER.error(
             "Could not connect to Sber MQTT broker. "
-            "Check credentials via integration options."
+            "Check credentials via integration options. "
+            "Auto-reconnect started — will retry when network is available."
         )
+        # Запускаем автоматическое переподключение
+        mqtt_client.start_auto_reconnect()
 
     # 5. State tracker
     state_tracker = StateTracker(
@@ -143,6 +151,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     else:
         _LOGGER.warning("Sber MQTT startup: not connected, config publish skipped")
 
+    # 10. Регистрируем сервисы
+    _async_register_services(hass)
+    
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     return True
 
@@ -153,14 +164,100 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if tracker := data.get("state_tracker"):
         tracker.stop()
     if client := data.get("mqtt_client"):
+        # Останавливаем автопереподключение перед отключением
+        client.stop_auto_reconnect()
         await hass.async_add_executor_job(client.disconnect)
     return True
+
+
+async def _async_on_reconnect(
+    hass: HomeAssistant,
+    entry_id: str,
+    device_registry: SberDeviceRegistry,
+    serializer: SberSerializer,
+) -> None:
+    """Колбэк, вызываемый после успешного переподключения к MQTT.
+
+    Повторно отправляет конфигурацию и состояния устройств в Сбер,
+    чтобы восстановить синхронизацию после потери связи.
+    """
+    entry_data = hass.data.get(DOMAIN, {}).get(entry_id)
+    if not entry_data:
+        return
+
+    mqtt_client: SberMQTTClient = entry_data.get("mqtt_client")
+    if not mqtt_client or not mqtt_client.is_connected:
+        return
+
+    _LOGGER.info("Sber MQTT: переподключение успешно — отправляем config и status")
+
+    # Повторно отправляем конфигурацию устройств
+    if device_registry.devices:
+        payload = serializer.build_config_payload(device_registry.devices)
+        mqtt_client.publish_config(payload)
+        _LOGGER.info("Sber MQTT: config переотправлен для %d устройств", len(device_registry.devices))
+
+    # Повторно отправляем корневой статус
+    root_payload = serializer.build_root_state_payload()
+    mqtt_client.publish_status(root_payload)
+    _LOGGER.info("Sber MQTT: root status переотправлен")
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Перезагружает интеграцию после изменения учётных данных в OptionsFlow."""
     _LOGGER.info("Учётные данные Sber MQTT обновлены — перезагружаем интеграцию")
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+# ── Сервисы Home Assistant ─────────────────────────────────────────────────
+
+_SERVICES_REGISTERED = False
+
+
+def _async_register_services(hass: HomeAssistant) -> None:
+    """Регистрирует сервисы HA для интеграции sber_mqtt.
+    
+    Сервисы регистрируются один раз за жизнь процесса HA.
+    """
+    global _SERVICES_REGISTERED
+    if _SERVICES_REGISTERED:
+        return
+    _SERVICES_REGISTERED = True
+    
+    async def _handle_reconnect(call) -> None:
+        """Обработчик сервиса sber_mqtt.reconnect — принудительное переподключение."""
+        data = _get_active_entry_data(hass)
+        if not data:
+            _LOGGER.error("Sber MQTT: интеграция не загружена")
+            return
+        
+        mqtt_client: SberMQTTClient = data["mqtt_client"]
+        _LOGGER.info("Sber MQTT: сервис reconnect — принудительное переподключение")
+        
+        # Останавливаем автопереподключение перед ручным
+        mqtt_client.stop_auto_reconnect()
+        
+        ok = await hass.async_add_executor_job(mqtt_client.reconnect)
+        
+        if ok:
+            _LOGGER.info("Sber MQTT: переподключение успешно")
+            # Вызываем колбэк для повторной отправки config/status
+            if mqtt_client._on_reconnect_callback:
+                try:
+                    await mqtt_client._on_reconnect_callback()
+                except Exception as exc:
+                    _LOGGER.error("Ошибка в колбэке переподключения: %s", exc)
+        else:
+            _LOGGER.warning("Sber MQTT: переподключение не удалось, запускаем автопереподключение")
+            mqtt_client.start_auto_reconnect()
+    
+    # Регистрируем сервис reconnect
+    hass.services.async_register(
+        DOMAIN,
+        "reconnect",
+        _handle_reconnect,
+    )
+    _LOGGER.info("Sber MQTT: сервис sber_mqtt.reconnect зарегистрирован")
 
 
 # ── HTTP views (REST API) ─────────────────────────────────────────────────

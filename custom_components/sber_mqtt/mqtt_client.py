@@ -83,6 +83,15 @@ class SberMQTTClient:
         self._last_error_time: float | None = None
         self._last_connected_time: float | None = None
 
+        # Автоматическое переподключение
+        self._reconnect_task: asyncio.Task | None = None
+        self._reconnect_attempt: int = 0
+        # Экспоненциальная задержка: 10с, 30с, 1мин, 2мин, 5мин, 10мин, 15мин (макс)
+        self._reconnect_delays = [10, 30, 60, 120, 300, 600, 900]
+        
+        # Колбэк для уведомления о переподключении (для republish config/status)
+        self._on_reconnect_callback: Callable | None = None
+
     # ── Публичный интерфейс ────────────────────────────────────────────────
 
     @property
@@ -102,7 +111,96 @@ class SberMQTTClient:
             "last_error":          self._last_error,
             "last_error_time":     self._last_error_time,
             "last_connected_time": self._last_connected_time,
+            "auto_reconnect_active": self._reconnect_task is not None and not self._reconnect_task.done(),
+            "reconnect_attempt":   self._reconnect_attempt,
         }
+
+    def set_on_reconnect_callback(self, callback: Callable | None) -> None:
+        """Устанавливает колбэк, вызываемый после успешного переподключения.
+
+        Колбэк вызывается без аргументов в event loop HA.
+        Используется для повторной отправки config/status после восстановления связи.
+        """
+        self._on_reconnect_callback = callback
+
+    def start_auto_reconnect(self) -> None:
+        """Запускает фоновую задачу автоматического переподключения.
+
+        Вызывается если первичное подключение не удалось.
+        Задача пытается переподключиться с экспоненциальной задержкой.
+        """
+        if self._reconnect_task is not None and not self._reconnect_task.done():
+            _LOGGER.debug("Sber MQTT: автопереподключение уже запущено")
+            return
+
+        self._reconnect_attempt = 0
+        self._reconnect_task = self._hass.async_create_task(
+            self._async_auto_reconnect_loop(),
+            name="sber_mqtt_auto_reconnect"
+        )
+        _LOGGER.info("Sber MQTT: запущено автоматическое переподключение")
+
+    def stop_auto_reconnect(self) -> None:
+        """Останавливает фоновую задачу автоматического переподключения."""
+        if self._reconnect_task is not None and not self._reconnect_task.done():
+            self._reconnect_task.cancel()
+            _LOGGER.info("Sber MQTT: автоматическое переподключение остановлено")
+        self._reconnect_task = None
+        self._reconnect_attempt = 0
+
+    async def _async_auto_reconnect_loop(self) -> None:
+        """Фоновая задача: пытается переподключиться с экспоненциальной задержкой.
+
+        Работает пока не будет достигнуто успешное подключение или пока не будет
+        остановлена вызовом stop_auto_reconnect().
+        """
+        try:
+            while not self._connected:
+                # Рассчитываем задержку
+                delay_index = min(self._reconnect_attempt, len(self._reconnect_delays) - 1)
+                delay = self._reconnect_delays[delay_index]
+
+                _LOGGER.info(
+                    "Sber MQTT: попытка переподключения #%d через %d сек",
+                    self._reconnect_attempt + 1, delay
+                )
+
+                # Ждём
+                await asyncio.sleep(delay)
+
+                # Проверяем, не отменили ли нас
+                if self._connected:
+                    break
+
+                # Пытаемся подключиться
+                self._reconnect_attempt += 1
+                connected = await self._hass.async_add_executor_job(self.connect)
+
+                if connected:
+                    _LOGGER.info(
+                        "Sber MQTT: переподключение успешно с попытки #%d",
+                        self._reconnect_attempt
+                    )
+                    self._reconnect_attempt = 0
+
+                    # Вызываем колбэк для повторной отправки config/status
+                    if self._on_reconnect_callback:
+                        try:
+                            await self._on_reconnect_callback()
+                        except Exception as exc:
+                            _LOGGER.error("Ошибка в колбэке переподключения: %s", exc)
+                    break
+                else:
+                    _LOGGER.warning(
+                        "Sber MQTT: переподключение #%d не удалось, следующая попытка через %d сек",
+                        self._reconnect_attempt,
+                        self._reconnect_delays[min(self._reconnect_attempt, len(self._reconnect_delays) - 1)]
+                    )
+
+        except asyncio.CancelledError:
+            _LOGGER.debug("Sber MQTT: задача автопереподключения отменена")
+        except Exception as exc:
+            _LOGGER.error("Sber MQTT: ошибка в задаче автопереподключения: %s", exc)
 
     def reconnect(self) -> bool:
         """Переподключается к брокеру. Блокирующий — вызывать через executor."""
@@ -178,6 +276,9 @@ class SberMQTTClient:
 
     def disconnect(self) -> None:
         """Отключается от брокера. Блокирующий метод — вызывать через executor."""
+        # Останавливаем автопереподключение при штатном отключении
+        self.stop_auto_reconnect()
+        
         if self._client:
             self._client.loop_stop()
             try:
@@ -249,15 +350,34 @@ class SberMQTTClient:
             )
 
     def _on_disconnect(self, client, userdata, rc) -> None:
-        """Вызывается при разрыве соединения. Paho автоматически переподключается."""
+        """Вызывается при разрыве соединения.
+        
+        При неожиданном разрыве (rc != 0) запускает автоматическое переподключение.
+        Paho-MQTT имеет встроенный механизм переподключения, но он не работает если
+        loop был остановлен или соединение не было установлено изначально.
+        """
         self._connected = False
         if rc != 0:
-            self._last_error = f"Соединение разорвано неожиданно (rc={rc}). Paho переподключится автоматически."
+            self._last_error = f"Соединение разорвано неожиданно (rc={rc}). Запущено автопереподключение."
             self._last_error_time = _time.time()
-        _LOGGER.warning(
-            "Sber MQTT: соединение разорвано rc=%s (%s)",
-            rc, "штатное отключение" if rc == 0 else "неожиданный разрыв — paho переподключится",
-        )
+            _LOGGER.warning(
+                "Sber MQTT: соединение разорвано rc=%s — запускаем автопереподключение",
+                rc,
+            )
+            # Запускаем автопереподключение из потока paho через schedule
+            self._schedule(self._async_start_auto_reconnect_from_disconnect())
+        else:
+            _LOGGER.info("Sber MQTT: штатное отключение от брокера")
+    
+    async def _async_start_auto_reconnect_from_disconnect(self) -> None:
+        """Запускает автопереподключение после неожиданного разрыва соединения.
+        
+        Вызывается из _on_disconnect через _schedule (из потока paho в event loop HA).
+        """
+        # Небольшая задержка чтобы Paho успел завершить внутренние операции
+        await asyncio.sleep(2)
+        if not self._connected:
+            self.start_auto_reconnect()
 
     def _on_message_fallback(self, client, userdata, message) -> None:
         """Обработчик для топиков без явного колбэка (на случай новых топиков от Сбера)."""

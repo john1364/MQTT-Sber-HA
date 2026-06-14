@@ -571,7 +571,8 @@ class SberDevReconnectView(HomeAssistantView):
     """Принудительное переподключение к MQTT брокеру.
 
     POST /api/sber_mqtt/dev/reconnect
-    Отключается от брокера и подключается заново с теми же учётными данными.
+    Останавливает автопереподключение, отключается от брокера и подключается заново.
+    Если переподключение не удалось — запускает автопереподключение.
     Возвращает обновлённый connection_info после попытки подключения.
     """
 
@@ -590,7 +591,16 @@ class SberDevReconnectView(HomeAssistantView):
 
         mqtt_client = data["mqtt_client"]
         _LOGGER.info("DevTools: принудительное переподключение к MQTT")
+        
+        # Останавливаем автопереподключение перед ручным
+        mqtt_client.stop_auto_reconnect()
+        
         ok = await hass.async_add_executor_job(mqtt_client.reconnect)
+        
+        # Если не удалось — запускаем автопереподключение
+        if not ok:
+            _LOGGER.warning("DevTools: переподключение не удалось, запускаем автопереподключение")
+            mqtt_client.start_auto_reconnect()
 
         info = mqtt_client.connection_info
         info["reconnect_ok"] = ok
