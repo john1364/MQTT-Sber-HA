@@ -630,6 +630,8 @@ function renderSPList(q){
   let list=spField==='humidity_entity'
     ? haSensors.filter(s=>s.device_class==='humidity'||s.device_class==='moisture')
     : (clsMap[spField]?haSensors.filter(s=>s.device_class===clsMap[spField]):haSensors);
+  // Если фильтр ничего не дал — показываем все (template-сенсоры и т.п.)
+  if(!list.length) list=haSensors;
   if(q)list=list.filter(s=>(s.area+s.device_class+s.entity_id+s.friendly_name).toLowerCase().includes(q));
   const el=document.getElementById('spList');if(!el)return;
   el.innerHTML=list.length?list.map(s=>`<div class="p-item ${wData[spField]===s.entity_id?'sel':''} ${usedCls(s.entity_id)}" onclick="pickSensor('${esc(s.entity_id)}','${esc(s.friendly_name)}','${esc(s.area)}')">
