@@ -130,7 +130,8 @@ def get_sensor_entities(hass: HomeAssistant, device_classes: list[str]) -> list[
                 dc = state.attributes.get("device_class", "")
 
         # Фильтруем по запрошенным классам (пустой список = все)
-        if device_classes and dc not in device_classes:
+        # Сенсоры без device_class (template и т.п.) пропускаем всегда
+        if device_classes and dc and dc not in device_classes:
             continue
 
         state = hass.states.get(entry.entity_id)
