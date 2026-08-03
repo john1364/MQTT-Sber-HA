@@ -59,7 +59,7 @@ class SberHASensorsView(HomeAssistantView):
 
     async def get(self, request: web.Request) -> web.Response:
         hass: HomeAssistant = request.app["hass"]
-        classes_param = request.query.get("classes", "temperature,humidity,battery,signal_strength,power,current,voltage")
+        classes_param = request.query.get("classes", "temperature,humidity,battery,signal_strength,power,current,voltage,carbon_dioxide,pm25,volatile_organic_compounds")
         device_classes = [c.strip() for c in classes_param.split(",") if c.strip()]
         entities = get_sensor_entities(hass, device_classes)
         return web.json_response({"entities": entities})
@@ -436,7 +436,7 @@ class SberHAEntitiesIntercomView(HomeAssistantView):
 
     async def get(self, request: web.Request) -> web.Response:
         hass: HomeAssistant = request.app["hass"]
-        entities = get_ha_entities(hass, ["switch", "button", "input_button", "lock", "input_boolean"])
+        entities = get_ha_entities(hass, ["switch", "button", "input_button", "lock", "input_boolean", "script"])
         return web.json_response({"entities": entities})
 
 
