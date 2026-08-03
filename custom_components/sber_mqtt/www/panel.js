@@ -139,7 +139,7 @@ function renderTable() {
           </button>
         </div>
       </td>
-      <td class="del-col"><button class="btn btn-ghost btn-sm" onclick="askDel('${esc(d.id)}','${esc(d.name)}')">🗑</button></td>
+      <td class="del-col"><button class="btn btn-ghost btn-sm" onclick="editDevice('${esc(d.id)}')">✏️</button><button class="btn btn-ghost btn-sm" onclick="askDel('${esc(d.id)}','${esc(d.name)}')">🗑</button></td>
     </tr>`;
   }).join('');
 }
@@ -264,6 +264,18 @@ async function publishOneStatus(deviceId){
 
 function askDel(id,name){delId=id;document.getElementById('confTxt').textContent=`Устройство «${name}» будет удалено.`;document.getElementById('conf').style.display='flex';}
 function closeConf(){delId=null;document.getElementById('conf').style.display='none';}
+
+function editDevice(id){
+  const d=devices.find(x=>x.id===id);if(!d)return;
+  wType=d.device_type;
+  wData={id:d.id,name:d.name,room:d.room||''};
+  const a=d.attributes||{};
+  for(const [k,v] of Object.entries(a)){wData[k]=v;wData[k+'_name']=v;wData[k+'_area']='';}
+  wStep=2; // начинаем с шага выбора сущностей
+  document.getElementById('wiz').style.display='';
+  renderWiz();
+  wizNext(); // триггерим загрузку данных для шага 2
+}
 async function doDelete(){
   if(!delId)return;const id=delId;closeConf();
   try{await api(`/api/sber_mqtt/devices/${id}`,{method:'DELETE'});toast('Удалено','ok');await loadDevices();}
@@ -732,9 +744,12 @@ async function submitDevice(){
   const body={id:wData.id,name:wData.name,room:wData.room||'',device_type:wType,attributes:attrs};
   const btn=document.getElementById('btnNext');btn.disabled=true;btn.innerHTML='<div class="spin"></div>';
   try{
-    const res = await api('/api/sber_mqtt/devices',{method:'POST',body:JSON.stringify(body)});
+    const exists=devices.some(d=>d.id===wData.id);
+    const method=exists?'PUT':'POST';
+    const url=exists?`/api/sber_mqtt/devices/${wData.id}`:'/api/sber_mqtt/devices';
+    const res = await api(url,{method,body:JSON.stringify(body)});
     closeWizard();
-    toast('Устройство добавлено','ok');
+    toast(exists?'Устройство обновлено':'Устройство добавлено','ok');
     await loadDevices();
     // Применяем last_state из ответа — он уже содержит начальное состояние
     if(res.device?.last_state && Object.keys(res.device.last_state).length){

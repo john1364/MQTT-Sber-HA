@@ -249,6 +249,38 @@ class SberDeviceView(HomeAssistantView):
     def __init__(self, hass: HomeAssistant) -> None:
         pass
 
+    async def put(self, request: web.Request, device_id: str) -> web.Response:
+        """Обновляет устройство: имя, комната, атрибуты."""
+        hass: HomeAssistant = request.app["hass"]
+        data = _get_entry_data(hass)
+        if not data:
+            return web.json_response({"error": "Integration not loaded"}, status=503)
+
+        body = await request.json()
+        registry      = data["device_registry"]
+        serializer    = data["serializer"]
+        mqtt_client   = data["mqtt_client"]
+        state_tracker = data["state_tracker"]
+
+        existing = registry.get_device(device_id)
+        if not existing:
+            return web.json_response({"error": "Device not found"}, status=404)
+
+        # Обновляем поля
+        if "name" in body:
+            existing["name"] = body["name"]
+        if "room" in body:
+            existing["room"] = body["room"]
+        if "attributes" in body:
+            existing["attributes"] = {**existing.get("attributes", {}), **body["attributes"]}
+
+        await registry.async_save()
+        state_tracker.refresh()
+        config_payload = serializer.build_config_payload(registry.devices)
+        mqtt_client.publish_config(config_payload)
+
+        return web.json_response({"ok": True, "device": existing})
+
     async def delete(self, request: web.Request, device_id: str) -> web.Response:
         """Удаляет устройство, обновляет подписки и переотправляет конфиг."""
         hass: HomeAssistant = request.app["hass"]
