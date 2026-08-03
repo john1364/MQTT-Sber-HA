@@ -759,21 +759,9 @@ class SberSerializer:
     def _tv_config(self, device_id: str, device: dict) -> dict:
         """Конфиг для телевизора (tv).
 
-        Поддерживаемые функции: online, on_off + опционально: volume, volume_int,
-        mute, channel, channel_int, source.
+        Всегда включает: online, on_off, volume, mute, channel, source.
         """
-        attrs    = device.get("attributes", {})
-        features = ["online", "on_off"]
-        if attrs.get("volume"):
-            features.append("volume")
-        if attrs.get("volume_int"):
-            features.append("volume_int")
-        if attrs.get("mute"):
-            features.append("mute")
-        if attrs.get("channel"):
-            features.append("channel")
-        if attrs.get("source"):
-            features.append("source")
+        features = ["online", "on_off", "volume", "mute", "channel", "source"]
 
         entry = {
             "id": device_id,

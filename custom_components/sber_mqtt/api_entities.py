@@ -410,3 +410,21 @@ class SberHAEntitiesTVView(HomeAssistantView):
             "supported_features": lambda s, e: s.attributes.get("supported_features", 0) if s else 0,
         })
         return web.json_response({"entities": entities})
+
+
+# ── GET /api/sber_mqtt/ha_entities/water_sensors ──────────────────────────
+
+class SberHAEntitiesWaterSensorView(HomeAssistantView):
+    """Все сенсоры без фильтра — для выбора уровня воды в чайнике."""
+
+    url  = "/api/sber_mqtt/ha_entities/water_sensors"
+    name = "api:sber_mqtt:ha_entities_water_sensors"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        pass
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entities = get_sensor_entities(hass, [])
+        return web.json_response({"entities": entities})

@@ -293,7 +293,7 @@ async function wizNext(){
   if(wStep<total){
     wStep++;
     // Загружаем список сущностей при переходе на шаг 2 (если ещё не загружены)
-    if(wStep===2){if(wType==='relay')await Promise.all([fetchRelay(),fetchSensors()]);if(wType==='sensor_temp')await fetchSensors();if(wType==='scenario_button')await fetchRelay();if(wType==='hvac_ac')await Promise.all([fetchClimate(),fetchSensors(),fetchSocket()]);if(wType==='vacuum_cleaner')await Promise.all([fetchVacuum(),fetchSensors()]);if(wType==='valve')await fetchValve();if(wType==='light')await fetchLight();if(wType==='cover')await Promise.all([fetchCover(),fetchSensors()]);if(wType==='water_leak')await Promise.all([fetchWaterLeak(),fetchSensors()]);if(wType==='humidifier')await Promise.all([fetchHumidifier(),fetchSensors()]);if(wType==='socket')await Promise.all([fetchSocket(),fetchSensors()]);if(wType==='smoke')await Promise.all([fetchSmoke(),fetchSensors()]);if(wType==='kettle')await Promise.all([fetchKettle(),fetchSensors()]);if(wType==='sensor_door')await Promise.all([fetchDoor(),fetchSensors()]);if(wType==='sensor_air')await fetchSensors();if(wType==='hvac_radiator')await Promise.all([fetchRadiator(),fetchSensors()]);if(wType==='hvac_fan')await Promise.all([fetchFan(),fetchSensors()]);if(wType==='tv')await fetchTv();}
+    if(wStep===2){if(wType==='relay')await Promise.all([fetchRelay(),fetchSensors()]);if(wType==='sensor_temp')await fetchSensors();if(wType==='scenario_button')await fetchRelay();if(wType==='hvac_ac')await Promise.all([fetchClimate(),fetchSensors(),fetchSocket()]);if(wType==='vacuum_cleaner')await Promise.all([fetchVacuum(),fetchSensors()]);if(wType==='valve')await fetchValve();if(wType==='light')await fetchLight();if(wType==='cover')await Promise.all([fetchCover(),fetchSensors()]);if(wType==='water_leak')await Promise.all([fetchWaterLeak(),fetchSensors()]);if(wType==='humidifier')await Promise.all([fetchHumidifier(),fetchSensors()]);if(wType==='socket')await Promise.all([fetchSocket(),fetchSensors()]);if(wType==='smoke')await Promise.all([fetchSmoke(),fetchSensors()]);if(wType==='kettle')await Promise.all([fetchKettle(),fetchWaterSensors()]);if(wType==='sensor_door')await Promise.all([fetchDoor(),fetchSensors()]);if(wType==='sensor_air')await fetchSensors();if(wType==='hvac_radiator')await Promise.all([fetchRadiator(),fetchSensors()]);if(wType==='hvac_fan')await Promise.all([fetchFan(),fetchSensors()]);if(wType==='tv')await fetchTv();}
     renderWiz();
   }else{
     await submitDevice();
@@ -1457,7 +1457,7 @@ window.addEventListener('load', init);
 // WIZARD: ЧАЙНИК
 // ═══════════════════════════════════════════════════════════
 
-let haKettle=[], haNumber=[], haDoor=[], haAir=[], haRadiator=[], haFan=[], haTv=[];
+let haKettle=[], haNumber=[], haDoor=[], haAir=[], haRadiator=[], haFan=[], haTv=[], haWaterSensors=[];
 
 async function fetchKettle(){
   if(haKettle.length)return;
@@ -1469,6 +1469,12 @@ async function fetchNumber(){
   if(haNumber.length)return;
   try{haNumber=(await api('/api/sber_mqtt/ha_entities/number')).entities||[];}
   catch(e){toast('Ошибка загрузки number-сущностей','err');}
+}
+
+async function fetchWaterSensors(){
+  if(haWaterSensors.length)return;
+  try{haWaterSensors=(await api('/api/sber_mqtt/ha_entities/water_sensors')).entities||[];}
+  catch(e){toast('Ошибка загрузки сенсоров','err');}
 }
 
 function renderStep2Kettle(){
@@ -1495,9 +1501,9 @@ function renderStep2Kettle(){
       </div>
       <div id="kettleWaterPicker" style="display:none;margin-top:6px">
         <div class="picker">
-          <div class="p-list" style="max-height:140px" id="kettleWaterList"></div>
-        </div>
-      </div>
+          <div class="psearch"><span style="color:var(--muted)">🔍</span>
+            <input type="text" placeholder="Поиск…" oninput="renderKettleWaterList(this.value)"/></div>
+          <div class="p-list" style="max-height:140px" id="kettleWaterList"></div></div></div>
     </div>`:''}`;
 }
 
@@ -1517,10 +1523,15 @@ function pickKettleEntity(eid,name,area){
 function openKettleWater(){
   const el=document.getElementById('kettleWaterPicker');
   el.style.display=el.style.display==='none'?'':'none';
-  const list=haSensors.filter(s=>!sFilter||(s.entity_id+s.friendly_name).toLowerCase().includes(sFilter));
-  document.getElementById('kettleWaterList').innerHTML=list.length
+  renderKettleWaterList('');
+}
+function renderKettleWaterList(q){
+  q=(q||'').toLowerCase();
+  const list=haWaterSensors.filter(s=>!q||(s.entity_id+s.friendly_name+s.device_class).toLowerCase().includes(q));
+  const el=document.getElementById('kettleWaterList');if(!el)return;
+  el.innerHTML=list.length
     ?list.map(s=>`<div class="p-item ${wData.water_entity===s.entity_id?'sel':''}" onclick="pickKettleWater('${esc(s.entity_id)}','${esc(s.friendly_name)}')">
-      <span class="dom-badge">${esc(s.device_class)}</span><span class="p-area">${esc(s.area||'—')}</span>
+      <span class="dom-badge">${esc(s.device_class||'—')}</span><span class="p-area">${esc(s.area||'—')}</span>
       <span class="p-name">${esc(s.friendly_name)}</span><span class="p-eid">${esc(s.entity_id)}</span></div>`).join('')
     :'<div class="p-empty">Нет сенсоров</div>';
 }

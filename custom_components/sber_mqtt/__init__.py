@@ -188,6 +188,7 @@ def _register_http_views(hass: HomeAssistant) -> None:
         SberHAEntitiesRadiatorView,
         SberHAEntitiesFanView,
         SberHAEntitiesTVView,
+        SberHAEntitiesWaterSensorView,
         SberPublishConfigView,
         SberPublishStatusView,
         SberPanelView,
@@ -231,6 +232,7 @@ def _register_http_views(hass: HomeAssistant) -> None:
     hass.http.register_view(SberHAEntitiesRadiatorView(hass))
     hass.http.register_view(SberHAEntitiesFanView(hass))
     hass.http.register_view(SberHAEntitiesTVView(hass))
+    hass.http.register_view(SberHAEntitiesWaterSensorView(hass))
     hass.http.register_view(SberPublishConfigView(hass))
     hass.http.register_view(SberPublishStatusView(hass))
     hass.http.register_view(SberPanelView(hass))
