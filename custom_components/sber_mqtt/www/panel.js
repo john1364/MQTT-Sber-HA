@@ -693,6 +693,7 @@ async function submitDevice(){
   else if(wType==='kettle'){
     attrs.entity_id=wData.entity_id;attrs.entity_name=wData.entity_name||'';
     if(wData.water_entity) attrs.water_entity=wData.water_entity;
+    if(wData.water_low_entity) attrs.water_low_entity=wData.water_low_entity;
   }
   else if(wType==='humidifier'){
     attrs.entity_id=wData.entity_id;attrs.entity_name=wData.entity_name||'';
@@ -1499,11 +1500,19 @@ function renderStep2Kettle(){
           <span>${wData.water_entity?(wData.water_entity_name||wData.water_entity):'Выбрать сенсор…'}</span><span>${wData.water_entity?'✓':'▾'}</span></button>
         ${wData.water_entity?`<div class="sf-sub">${esc(wData.water_entity)} <button class="sf-clr" onclick="delete wData.water_entity;delete wData.water_entity_name;document.getElementById('wizContent').innerHTML=renderStep2Kettle()">✕</button></div>`:''}
       </div>
+      <div class="sf"><label>🔴 Мало воды (опционально)</label>
+        <button class="sf-btn ${wData.water_low_entity?'filled':''}" onclick="openKettleWaterLow()">
+          <span>${wData.water_low_entity?(wData.water_low_entity_name||wData.water_low_entity):'Выбрать binary_sensor…'}</span><span>${wData.water_low_entity?'✓':'▾'}</span></button>
+        ${wData.water_low_entity?`<div class="sf-sub">${esc(wData.water_low_entity)} <button class="sf-clr" onclick="delete wData.water_low_entity;delete wData.water_low_entity_name;document.getElementById('wizContent').innerHTML=renderStep2Kettle()">✕</button></div>`:''}
+      </div>
       <div id="kettleWaterPicker" style="display:none;margin-top:6px">
         <div class="picker">
           <div class="psearch"><span style="color:var(--muted)">🔍</span>
             <input type="text" placeholder="Поиск…" oninput="renderKettleWaterList(this.value)"/></div>
           <div class="p-list" style="max-height:140px" id="kettleWaterList"></div></div></div>
+      <div id="kettleWaterLowPicker" style="display:none;margin-top:6px">
+        <div class="picker">
+          <div class="p-list" style="max-height:140px" id="kettleWaterLowList"></div></div></div>
     </div>`:''}`;
 }
 
@@ -1538,6 +1547,23 @@ function renderKettleWaterList(q){
 function pickKettleWater(eid,name){
   wData.water_entity=eid;wData.water_entity_name=name;
   document.getElementById('kettleWaterPicker').style.display='none';
+  document.getElementById('wizContent').innerHTML=renderStep2Kettle();
+}
+function openKettleWaterLow(){
+  // Используем haSensors с device_class moisture или все binary_sensor
+  const list=haWaterSensors.filter(s=>s.domain==='binary_sensor'||s.device_class==='moisture');
+  const el=document.getElementById('kettleWaterLowList');
+  const wrap=document.getElementById('kettleWaterLowPicker');
+  if(!el){wrap.style.display='none';return;}
+  wrap.style.display=wrap.style.display==='none'?'':'none';
+  el.innerHTML=list.length
+    ?list.map(s=>`<div class="p-item ${wData.water_low_entity===s.entity_id?'sel':''}" onclick="pickKettleWaterLow('${esc(s.entity_id)}','${esc(s.friendly_name)}')">
+      <span class="dom-badge">${esc(s.device_class||'—')}</span><span class="p-name">${esc(s.friendly_name)}</span><span class="p-eid">${esc(s.entity_id)}</span></div>`).join('')
+    :'<div class="p-empty">Нет binary_sensor</div>';
+}
+function pickKettleWaterLow(eid,name){
+  wData.water_low_entity=eid;wData.water_low_entity_name=name;
+  document.getElementById('kettleWaterLowPicker').style.display='none';
   document.getElementById('wizContent').innerHTML=renderStep2Kettle();
 }
 

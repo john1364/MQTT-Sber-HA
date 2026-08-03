@@ -189,9 +189,9 @@ class StateTracker:
                 entity_id = attrs.get("entity_id", "")
                 if entity_id:
                     watched.add(entity_id)
-                water_entity = attrs.get("water_entity", "")
-                if water_entity:
-                    watched.add(water_entity)
+                for key in ("water_entity", "water_low_entity"):
+                    if attrs.get(key):
+                        watched.add(attrs[key])
 
             elif device_type == DEVICE_TYPE_SENSOR_DOOR:
                 entity_id = attrs.get("entity_id", "")
@@ -324,7 +324,7 @@ class StateTracker:
             }
 
         elif device_type == DEVICE_TYPE_KETTLE:
-            watched = {attrs.get("entity_id", ""), attrs.get("water_entity", "")}
+            watched = {attrs.get("entity_id", ""), attrs.get("water_entity", ""), attrs.get("water_low_entity", "")}
 
         elif device_type == DEVICE_TYPE_SENSOR_DOOR:
             watched = {

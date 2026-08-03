@@ -406,7 +406,8 @@ def build_current_state_payload(
 
         return serializer.build_kettle_state_payload(
             device_id, is_on, current_temp, target_temp,
-            water_percentage=_sensor_float(hass, attrs.get("water_entity")),
+            water_level=_sensor_float(hass, attrs.get("water_entity")),
+            water_low=_sensor_bool(hass, attrs.get("water_low_entity")),
         )
 
     # ── Увлажнитель воздуха ──────────────────────────────────────────────

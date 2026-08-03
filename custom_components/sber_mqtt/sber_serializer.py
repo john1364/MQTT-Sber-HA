@@ -564,7 +564,9 @@ class SberSerializer:
                     "kitchen_water_temperature",
                     "kitchen_water_temperature_set"]
         if attrs.get("water_entity"):
-            features.append("hvac_water_percentage")
+            features.append("kitchen_water_level")
+        if attrs.get("water_low_entity"):
+            features.append("kitchen_water_low_level")
 
         model: dict = {
             "id":           "ID_kettle",
@@ -1445,14 +1447,16 @@ class SberSerializer:
         is_on: bool,
         current_temp: float | None = None,
         target_temp: float | None = None,
-        water_percentage: float | None = None,
+        water_level: float | None = None,
+        water_low: bool | None = None,
     ) -> str:
         """Состояние чайника.
 
-        is_on            — включён/выключен (on_off)
-        current_temp     — текущая температура воды 0–100 °C (kitchen_water_temperature)
-        target_temp      — целевая температура 0–100 °C (kitchen_water_temperature_set)
-        water_percentage — уровень воды 0–100 % (hvac_water_percentage)
+        is_on        — включён/выключен (on_off)
+        current_temp — текущая температура воды 0–100 °C (kitchen_water_temperature)
+        target_temp  — целевая температура 0–100 °C (kitchen_water_temperature_set)
+        water_level  — уровень воды в литрах (kitchen_water_level)
+        water_low    — вода закончилась (kitchen_water_low_level)
         """
         states: list[dict] = [
             {"key": "online", "value": {"type": "BOOL", "bool_value": True}},
@@ -1474,14 +1478,19 @@ class SberSerializer:
                 })
             except (ValueError, TypeError):
                 pass
-        if water_percentage is not None:
+        if water_level is not None:
             try:
                 states.append({
-                    "key": "hvac_water_percentage",
-                    "value": {"type": "INTEGER", "integer_value": max(0, min(100, round(float(water_percentage))))},
+                    "key": "kitchen_water_level",
+                    "value": {"type": "FLOAT", "float_value": round(float(water_level), 2)},
                 })
             except (ValueError, TypeError):
                 pass
+        if water_low is not None:
+            states.append({
+                "key": "kitchen_water_low_level",
+                "value": {"type": "BOOL", "bool_value": water_low},
+            })
         return json.dumps({"devices": {device_id: {"states": states}}}, ensure_ascii=False)
 
     def build_humidifier_state_payload(
