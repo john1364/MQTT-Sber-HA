@@ -43,6 +43,11 @@ DEVICE_TYPE_HUMIDIFIER      = "humidifier"       # Увлажнитель воз
 DEVICE_TYPE_SOCKET          = "socket"           # Розетка с энергомониторингом
 DEVICE_TYPE_SMOKE           = "smoke"            # Датчик дыма
 DEVICE_TYPE_KETTLE          = "kettle"           # Чайник
+DEVICE_TYPE_SENSOR_DOOR     = "sensor_door"      # Датчик открытия двери/окна
+DEVICE_TYPE_SENSOR_AIR      = "sensor_air"       # Датчик качества воздуха
+DEVICE_TYPE_HVAC_RADIATOR   = "hvac_radiator"    # Термоголовка радиатора
+DEVICE_TYPE_HVAC_FAN        = "hvac_fan"         # Вентилятор / бризер
+DEVICE_TYPE_TV              = "tv"               # Телевизор
 
 # Маппинг скоростей вентилятора Сбер → HA (humidifier mode)
 # Сбер: auto | low | medium | high | turbo | quiet
@@ -56,6 +61,16 @@ SBER_AIR_FLOW_TO_HA_MODE: dict[str, str] = {
     "quiet":  "quiet",
 }
 HA_MODE_TO_SBER_AIR_FLOW: dict[str, str] = {v: k for k, v in SBER_AIR_FLOW_TO_HA_MODE.items()}
+
+# Маппинг скоростей Сбер → процент для fan (hvac_fan)
+SBER_AIR_FLOW_TO_FAN_PCT: dict[str, int] = {
+    "auto":   50,
+    "low":    25,
+    "medium": 50,
+    "high":   75,
+    "turbo":  100,
+    "quiet":  10,
+}
 
 # ── Маппинги вентилятора кондиционера (hvac_ac) ───────────────────────────
 
@@ -123,6 +138,11 @@ SUPPORTED_DEVICE_TYPES = {
     DEVICE_TYPE_SOCKET:          "Розетка",
     DEVICE_TYPE_SMOKE:           "Датчик дыма",
     DEVICE_TYPE_KETTLE:          "Чайник",
+    DEVICE_TYPE_SENSOR_DOOR:     "Датчик открытия",
+    DEVICE_TYPE_SENSOR_AIR:      "Датчик качества воздуха",
+    DEVICE_TYPE_HVAC_RADIATOR:   "Термоголовка радиатора",
+    DEVICE_TYPE_HVAC_FAN:        "Бризер / вентилятор",
+    DEVICE_TYPE_TV:              "Телевизор",
 }
 
 # ── Домены HA для типа "реле" ─────────────────────────────────────────────
@@ -207,6 +227,14 @@ SBER_VACUUM_COMMAND_TO_HA = {
     "pause":          ("vacuum", "pause"),
     "return_to_dock": ("vacuum", "return_to_base"),
 }
+
+# ── Домены HA для типа "датчик открытия" ──────────────────────────────────
+# Датчик открытия двери/окна: binary_sensor с device_class door/window/opening/garage_door
+SENSOR_DOOR_DEVICE_CLASSES = {"door", "window", "opening", "garage_door"}
+
+# Маппинг HA состояния → doorcontact_state Сбера
+# HA: on → дверь открыта, off → дверь закрыта
+HA_DOOR_STATE_TO_SBER = {"on": "open", "off": "close"}
 
 # ── Домены HA для типа "кран" ─────────────────────────────────────────────
 VALVE_DOMAINS = {"valve", "switch"}

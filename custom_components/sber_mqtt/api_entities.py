@@ -285,3 +285,128 @@ class SberHAEntitiesSocketView(HomeAssistantView):
         hass: HomeAssistant = request.app["hass"]
         entities = get_ha_entities(hass, ["switch", "input_boolean"])
         return web.json_response({"entities": entities})
+
+
+# ── GET /api/sber_mqtt/ha_entities/sensor_door ────────────────────────────
+
+class SberHAEntitiesDoorView(HomeAssistantView):
+    """Список binary_sensor с device_class door/window/opening/garage_door для датчика открытия."""
+
+    url  = "/api/sber_mqtt/ha_entities/sensor_door"
+    name = "api:sber_mqtt:ha_entities_sensor_door"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        pass
+
+    async def get(self, request: web.Request) -> web.Response:
+        from .const import SENSOR_DOOR_DEVICE_CLASSES
+        hass: HomeAssistant = request.app["hass"]
+        entities = get_ha_entities(hass, "binary_sensor", extra_fields={
+            "device_class": lambda s, e: s.attributes.get("device_class") if s else None,
+        })
+        # Фильтруем по device_class
+        entities = [e for e in entities if e.get("device_class") in SENSOR_DOOR_DEVICE_CLASSES]
+        return web.json_response({"entities": entities})
+
+
+# ── GET /api/sber_mqtt/ha_entities/sensor_air ─────────────────────────────
+
+class SberHAEntitiesAirView(HomeAssistantView):
+    """Список сенсоров HA для датчика качества воздуха.
+
+    Возвращает сенсоры с device_class: temperature, humidity, carbon_dioxide,
+    pm25, volatile_organic_compounds, battery, signal_strength.
+    """
+
+    url  = "/api/sber_mqtt/ha_entities/sensor_air"
+    name = "api:sber_mqtt:ha_entities_sensor_air"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        pass
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        classes = ["temperature", "humidity", "carbon_dioxide", "pm25",
+                    "volatile_organic_compounds", "battery", "signal_strength"]
+        entities = get_sensor_entities(hass, classes)
+        return web.json_response({"entities": entities})
+
+
+# ── GET /api/sber_mqtt/ha_entities/hvac_radiator ──────────────────────────
+
+class SberHAEntitiesRadiatorView(HomeAssistantView):
+    """Список climate-сущностей HA для термоголовки радиатора."""
+
+    url  = "/api/sber_mqtt/ha_entities/hvac_radiator"
+    name = "api:sber_mqtt:ha_entities_hvac_radiator"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        pass
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entities = get_ha_entities(hass, "climate", extra_fields={
+            "hvac_modes":          lambda s, e: s.attributes.get("hvac_modes", []) if s else [],
+            "min_temp":            lambda s, e: s.attributes.get("min_temp") if s else None,
+            "max_temp":            lambda s, e: s.attributes.get("max_temp") if s else None,
+            "target_temp_step":    lambda s, e: s.attributes.get("target_temp_step") if s else None,
+            "current_temperature": lambda s, e: s.attributes.get("current_temperature") if s else None,
+        })
+        return web.json_response({"entities": entities})
+
+
+# ── GET /api/sber_mqtt/ha_entities/hvac_fan ───────────────────────────────
+
+class SberHAEntitiesFanView(HomeAssistantView):
+    """Список fan и switch сущностей HA для бризера/вентилятора."""
+
+    url  = "/api/sber_mqtt/ha_entities/hvac_fan"
+    name = "api:sber_mqtt:ha_entities_hvac_fan"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        pass
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        def _pct(s, e):
+            if not s: return None
+            pct = s.attributes.get("percentage")
+            if pct is not None:
+                try: return int(float(pct))
+                except (ValueError, TypeError): return None
+            return None
+        entities = get_ha_entities(hass, "fan", extra_fields={
+            "percentage":     _pct,
+            "preset_modes":   lambda s, e: s.attributes.get("preset_modes", []) if s else [],
+            "supported_features": lambda s, e: s.attributes.get("supported_features", 0) if s else 0,
+        })
+        switch_entities = get_ha_entities(hass, ["switch", "input_boolean"])
+        entities.extend(switch_entities)
+        return web.json_response({"entities": entities})
+
+
+# ── GET /api/sber_mqtt/ha_entities/tv ─────────────────────────────────
+
+class SberHAEntitiesTVView(HomeAssistantView):
+    """Список media_player-сущностей HA для телевизора."""
+
+    url  = "/api/sber_mqtt/ha_entities/tv"
+    name = "api:sber_mqtt:ha_entities_tv"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        pass
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entities = get_ha_entities(hass, "media_player", extra_fields={
+            "source_list": lambda s, e: s.attributes.get("source_list", []) if s else [],
+            "volume_level": lambda s, e: s.attributes.get("volume_level") if s else None,
+            "is_volume_muted": lambda s, e: s.attributes.get("is_volume_muted") if s else None,
+            "supported_features": lambda s, e: s.attributes.get("supported_features", 0) if s else 0,
+        })
+        return web.json_response({"entities": entities})

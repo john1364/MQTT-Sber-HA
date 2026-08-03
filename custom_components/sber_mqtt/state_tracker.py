@@ -34,6 +34,11 @@ from .const import (
     DEVICE_TYPE_SOCKET,
     DEVICE_TYPE_SMOKE,
     DEVICE_TYPE_KETTLE,
+    DEVICE_TYPE_SENSOR_DOOR,
+    DEVICE_TYPE_SENSOR_AIR,
+    DEVICE_TYPE_HVAC_RADIATOR,
+    DEVICE_TYPE_HVAC_FAN,
+    DEVICE_TYPE_TV,
     RELAY_STATEFUL_DOMAINS,
     RELAY_BUTTON_DOMAINS,
     SCENARIO_BUTTON_STATEFUL_DOMAINS,
@@ -184,6 +189,41 @@ class StateTracker:
                 entity_id = attrs.get("entity_id", "")
                 if entity_id:
                     watched.add(entity_id)
+                water_entity = attrs.get("water_entity", "")
+                if water_entity:
+                    watched.add(water_entity)
+
+            elif device_type == DEVICE_TYPE_SENSOR_DOOR:
+                entity_id = attrs.get("entity_id", "")
+                if entity_id:
+                    watched.add(entity_id)
+                for key in ("battery_entity", "tamper_entity"):
+                    if attrs.get(key):
+                        watched.add(attrs[key])
+
+            elif device_type == DEVICE_TYPE_SENSOR_AIR:
+                for key in ("temperature_entity", "humidity_entity", "co2_entity",
+                            "pm25_entity", "tvoc_entity", "battery_entity", "signal_entity"):
+                    if attrs.get(key):
+                        watched.add(attrs[key])
+
+            elif device_type == DEVICE_TYPE_HVAC_RADIATOR:
+                entity_id = attrs.get("entity_id", "")
+                if entity_id:
+                    watched.add(entity_id)
+                temp_entity = attrs.get("temperature_entity", "")
+                if temp_entity:
+                    watched.add(temp_entity)
+
+            elif device_type == DEVICE_TYPE_HVAC_FAN:
+                entity_id = attrs.get("entity_id", "")
+                if entity_id:
+                    watched.add(entity_id)
+
+            elif device_type == DEVICE_TYPE_TV:
+                entity_id = attrs.get("entity_id", "")
+                if entity_id:
+                    watched.add(entity_id)
 
         if not watched:
             _LOGGER.debug("Нет сущностей для отслеживания")
@@ -284,6 +324,33 @@ class StateTracker:
             }
 
         elif device_type == DEVICE_TYPE_KETTLE:
+            watched = {attrs.get("entity_id", ""), attrs.get("water_entity", "")}
+
+        elif device_type == DEVICE_TYPE_SENSOR_DOOR:
+            watched = {
+                attrs.get("entity_id", ""),
+                attrs.get("battery_entity", ""),
+                attrs.get("tamper_entity", ""),
+            }
+
+        elif device_type == DEVICE_TYPE_SENSOR_AIR:
+            watched = {
+                attrs.get("temperature_entity", ""),
+                attrs.get("humidity_entity", ""),
+                attrs.get("co2_entity", ""),
+                attrs.get("pm25_entity", ""),
+                attrs.get("tvoc_entity", ""),
+                attrs.get("battery_entity", ""),
+                attrs.get("signal_entity", ""),
+            }
+
+        elif device_type == DEVICE_TYPE_HVAC_RADIATOR:
+            watched = {attrs.get("entity_id", ""), attrs.get("temperature_entity", "")}
+
+        elif device_type == DEVICE_TYPE_HVAC_FAN:
+            watched = {attrs.get("entity_id", "")}
+
+        elif device_type == DEVICE_TYPE_TV:
             watched = {attrs.get("entity_id", "")}
 
         else:

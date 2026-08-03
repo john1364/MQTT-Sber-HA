@@ -57,9 +57,15 @@ class HACommandHandler:
             await self._handle_valve_command(device, states)
         elif device_type == "cover":
             await self._handle_cover_command(device, states)
+        elif device_type == "hvac_radiator":
+            await self._handle_hvac_radiator_command(device, states)
+        elif device_type == "hvac_fan":
+            await self._handle_hvac_fan_command(device, states)
+        elif device_type == "tv":
+            await self._handle_tv_command(device, states)
 
         # ── Датчики — команды не принимают ───────────────────────────────
-        elif device_type in ("sensor_temp", "water_leak", "smoke"):
+        elif device_type in ("sensor_temp", "water_leak", "smoke", "sensor_door", "sensor_air"):
             _LOGGER.debug("Команда для датчика %s проигнорирована", device.get("id"))
 
         # ── Сценарные кнопки — только отправляют события в Сбер ─────────
@@ -286,6 +292,156 @@ class HACommandHandler:
                     _LOGGER.warning(
                         "HVAC %s: неизвестный hvac_air_flow_direction '%s'", device.get("id"), sber_dir
                     )
+
+    async def _handle_hvac_radiator_command(self, device: dict, states: list) -> None:
+        """Обрабатывает команды управления термоголовкой радиатора от Сбера.
+
+        Поддерживаемые команды:
+          on_off        → climate.turn_on / climate.turn_off
+          hvac_temp_set → climate.set_temperature
+        """
+        attrs     = device.get("attributes", {})
+        entity_id = attrs.get("entity_id", "")
+
+        for state in states:
+            key      = state.get("key", "")
+            val_obj = state.get("value", {})
+
+            if key == "on_off":
+                is_on = _parse_bool(val_obj)
+                service = "turn_on" if is_on else "turn_off"
+                _LOGGER.info("Radiator %s: on_off=%s → climate.%s", device.get("id"), is_on, service)
+                self._track_ha_command(device, states, "climate", service, {"entity_id": entity_id})
+                await self._hass.services.async_call(
+                    "climate", service, {"entity_id": entity_id}, blocking=False
+                )
+
+            elif key == "hvac_temp_set":
+                temp = _parse_integer(val_obj)
+                try:
+                    temp_f = float(temp)
+                    _LOGGER.info("Radiator %s: set_temperature=%.1f", device.get("id"), temp_f)
+                    self._track_ha_command(device, states, "climate", "set_temperature",
+                                           {"entity_id": entity_id, "temperature": temp_f})
+                    await self._hass.services.async_call(
+                        "climate", "set_temperature",
+                        {"entity_id": entity_id, "temperature": temp_f},
+                        blocking=False,
+                    )
+                except (ValueError, TypeError):
+                    _LOGGER.warning("Radiator %s: невалидная температура: %s", device.get("id"), temp)
+
+    async def _handle_hvac_fan_command(self, device: dict, states: list) -> None:
+        """Обрабатывает команды управления вентилятором / бризером от Сбера.
+
+        Поддерживаемые команды:
+          on_off              → fan.turn_on / fan.turn_off (или homeassistant.* для switch)
+          hvac_air_flow_power → fan.set_percentage
+        """
+        from .const import SBER_AIR_FLOW_TO_FAN_PCT
+
+        attrs     = device.get("attributes", {})
+        entity_id = attrs.get("entity_id", "")
+        domain    = entity_id.split(".")[0] if entity_id else "fan"
+
+        for state in states:
+            key     = state.get("key", "")
+            val_obj = state.get("value", {})
+
+            if key == "on_off":
+                is_on = _parse_bool(val_obj)
+                if domain in ("switch", "input_boolean"):
+                    svc_domain = "homeassistant"
+                    service    = "turn_on" if is_on else "turn_off"
+                else:
+                    svc_domain = "fan"
+                    service    = "turn_on" if is_on else "turn_off"
+                _LOGGER.info("Fan %s: on_off=%s → %s.%s", device.get("id"), is_on, svc_domain, service)
+                self._track_ha_command(device, states, svc_domain, service, {"entity_id": entity_id})
+                await self._hass.services.async_call(
+                    svc_domain, service, {"entity_id": entity_id}, blocking=False
+                )
+
+            elif key == "hvac_air_flow_power":
+                sber_flow = val_obj.get("enum_value", "")
+                pct = SBER_AIR_FLOW_TO_FAN_PCT.get(sber_flow)
+                if pct is not None and domain == "fan":
+                    _LOGGER.info("Fan %s: hvac_air_flow_power=%s → set_percentage=%d", device.get("id"), sber_flow, pct)
+                    self._track_ha_command(device, states, "fan", "set_percentage",
+                                           {"entity_id": entity_id, "percentage": pct})
+                    await self._hass.services.async_call(
+                        "fan", "set_percentage",
+                        {"entity_id": entity_id, "percentage": pct},
+                        blocking=False,
+                    )
+                else:
+                    _LOGGER.warning("Fan %s: неизвестная скорость '%s' или не fan-домен", device.get("id"), sber_flow)
+
+    async def _handle_tv_command(self, device: dict, states: list) -> None:
+        """Обрабатывает команды управления телевизором от Сбера."""
+        attrs     = device.get("attributes", {})
+        entity_id = attrs.get("entity_id", "")
+        domain    = entity_id.split(".")[0] if entity_id else "media_player"
+
+        for state in states:
+            key     = state.get("key", "")
+            val_obj = state.get("value", {})
+
+            if key == "on_off":
+                is_on = _parse_bool(val_obj)
+                service = "turn_on" if is_on else "turn_off"
+                self._track_ha_command(device, states, domain, service, {"entity_id": entity_id})
+                await self._hass.services.async_call(
+                    domain, service, {"entity_id": entity_id}, blocking=False
+                )
+
+            elif key == "volume":
+                direction = val_obj.get("enum_value", "")
+                if direction == "up":
+                    self._track_ha_command(device, states, domain, "volume_up", {"entity_id": entity_id})
+                    await self._hass.services.async_call(domain, "volume_up", {"entity_id": entity_id}, blocking=False)
+                elif direction == "down":
+                    self._track_ha_command(device, states, domain, "volume_down", {"entity_id": entity_id})
+                    await self._hass.services.async_call(domain, "volume_down", {"entity_id": entity_id}, blocking=False)
+
+            elif key == "volume_int":
+                vol = _parse_integer(val_obj)
+                try:
+                    level = max(0.0, min(1.0, float(vol) / 100.0))
+                    self._track_ha_command(device, states, domain, "volume_set",
+                                           {"entity_id": entity_id, "volume_level": level})
+                    await self._hass.services.async_call(
+                        domain, "volume_set", {"entity_id": entity_id, "volume_level": level}, blocking=False
+                    )
+                except (ValueError, TypeError):
+                    pass
+
+            elif key == "mute":
+                mute = _parse_bool(val_obj)
+                self._track_ha_command(device, states, domain, "volume_mute",
+                                       {"entity_id": entity_id, "is_volume_muted": mute})
+                await self._hass.services.async_call(
+                    domain, "volume_mute", {"entity_id": entity_id, "is_volume_muted": mute}, blocking=False
+                )
+
+            elif key == "channel":
+                direction = val_obj.get("enum_value", "")
+                if direction == "next":
+                    self._track_ha_command(device, states, domain, "media_next_track", {"entity_id": entity_id})
+                    await self._hass.services.async_call(domain, "media_next_track", {"entity_id": entity_id}, blocking=False)
+                elif direction == "prev":
+                    self._track_ha_command(device, states, domain, "media_previous_track", {"entity_id": entity_id})
+                    await self._hass.services.async_call(domain, "media_previous_track", {"entity_id": entity_id}, blocking=False)
+
+            elif key == "source":
+                src = val_obj.get("enum_value", "")
+                if src:
+                    self._track_ha_command(device, states, domain, "select_source",
+                                           {"entity_id": entity_id, "source": src})
+                    await self._hass.services.async_call(
+                        domain, "select_source", {"entity_id": entity_id, "source": src}, blocking=False
+                    )
+
     async def _handle_vacuum_command(self, device: dict, states: list) -> None:
         """Обрабатывает команды управления пылесосом от Сбера.
 
