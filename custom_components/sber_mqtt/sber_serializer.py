@@ -1315,7 +1315,7 @@ class SberSerializer:
         doorcontact = "open" if is_open else "close"
         states: list[dict] = [
             {"key": "online",            "value": {"type": "BOOL", "bool_value": True}},
-            {"key": "doorcontact_state", "value": {"type": "ENUM", "enum_value": doorcontact}},
+            {"key": "doorcontact_state", "value": {"type": "BOOL", "bool_value": is_open}},
         ]
         if battery is not None:
             try:
