@@ -293,7 +293,7 @@ async function wizNext(){
   if(wStep<total){
     wStep++;
     // Загружаем список сущностей при переходе на шаг 2 (если ещё не загружены)
-    if(wStep===2){if(wType==='relay')await Promise.all([fetchRelay(),fetchSensors()]);if(wType==='sensor_temp')await fetchSensors();if(wType==='scenario_button')await fetchRelay();if(wType==='hvac_ac')await Promise.all([fetchClimate(),fetchSensors(),fetchSocket()]);if(wType==='vacuum_cleaner')await Promise.all([fetchVacuum(),fetchSensors()]);if(wType==='valve')await fetchValve();if(wType==='light')await fetchLight();if(wType==='cover')await Promise.all([fetchCover(),fetchSensors()]);if(wType==='water_leak')await Promise.all([fetchWaterLeak(),fetchSensors()]);if(wType==='humidifier')await Promise.all([fetchHumidifier(),fetchSensors()]);if(wType==='socket')await Promise.all([fetchSocket(),fetchSensors()]);if(wType==='smoke')await Promise.all([fetchSmoke(),fetchSensors()]);if(wType==='kettle')await fetchKettle();if(wType==='sensor_door')await Promise.all([fetchDoor(),fetchSensors()]);if(wType==='sensor_air')await fetchSensors();if(wType==='hvac_radiator')await Promise.all([fetchRadiator(),fetchSensors()]);if(wType==='hvac_fan')await Promise.all([fetchFan(),fetchSensors()]);if(wType==='tv')await fetchTv();}
+    if(wStep===2){if(wType==='relay')await Promise.all([fetchRelay(),fetchSensors()]);if(wType==='sensor_temp')await fetchSensors();if(wType==='scenario_button')await fetchRelay();if(wType==='hvac_ac')await Promise.all([fetchClimate(),fetchSensors(),fetchSocket()]);if(wType==='vacuum_cleaner')await Promise.all([fetchVacuum(),fetchSensors()]);if(wType==='valve')await fetchValve();if(wType==='light')await fetchLight();if(wType==='cover')await Promise.all([fetchCover(),fetchSensors()]);if(wType==='water_leak')await Promise.all([fetchWaterLeak(),fetchSensors()]);if(wType==='humidifier')await Promise.all([fetchHumidifier(),fetchSensors()]);if(wType==='socket')await Promise.all([fetchSocket(),fetchSensors()]);if(wType==='smoke')await Promise.all([fetchSmoke(),fetchSensors()]);if(wType==='kettle')await Promise.all([fetchKettle(),fetchSensors()]);if(wType==='sensor_door')await Promise.all([fetchDoor(),fetchSensors()]);if(wType==='sensor_air')await fetchSensors();if(wType==='hvac_radiator')await Promise.all([fetchRadiator(),fetchSensors()]);if(wType==='hvac_fan')await Promise.all([fetchFan(),fetchSensors()]);if(wType==='tv')await fetchTv();}
     renderWiz();
   }else{
     await submitDevice();
@@ -1486,7 +1486,10 @@ function renderStep2Kettle(){
     ${sel?`<div style="margin-top:10px;padding:8px 12px;background:var(--primary-lt);border-radius:7px;font-size:12px;color:var(--primary-dk)">✓ Выбрано: <b>${esc(sel)}</b></div>`:''}
     <div style="margin-top:12px;font-size:11px;color:var(--muted)">
       Текущая и целевая температура воды подтягиваются автоматически из атрибутов сущности.
-    </div>`;
+    </div>
+    ${sel?`<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border,#e0e0e0)">
+      ${renderSensorField('water_entity','💧 Уровень воды (опционально)','moisture')}
+    </div>`:''}`;
 }
 
 function kettleItems(){
