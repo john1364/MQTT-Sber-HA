@@ -39,6 +39,7 @@ from .const import (
     DEVICE_TYPE_HVAC_RADIATOR,
     DEVICE_TYPE_HVAC_FAN,
     DEVICE_TYPE_TV,
+    DEVICE_TYPE_INTERCOM,
     RELAY_STATEFUL_DOMAINS,
     RELAY_BUTTON_DOMAINS,
     SCENARIO_BUTTON_STATEFUL_DOMAINS,
@@ -225,6 +226,14 @@ class StateTracker:
                 if entity_id:
                     watched.add(entity_id)
 
+            elif device_type == DEVICE_TYPE_INTERCOM:
+                entity_id = attrs.get("entity_id", "")
+                if entity_id:
+                    watched.add(entity_id)
+                inc_entity = attrs.get("incoming_call_entity", "")
+                if inc_entity:
+                    watched.add(inc_entity)
+
         if not watched:
             _LOGGER.debug("Нет сущностей для отслеживания")
             return
@@ -352,6 +361,9 @@ class StateTracker:
 
         elif device_type == DEVICE_TYPE_TV:
             watched = {attrs.get("entity_id", "")}
+
+        elif device_type == DEVICE_TYPE_INTERCOM:
+            watched = {attrs.get("entity_id", ""), attrs.get("incoming_call_entity", "")}
 
         else:
             return

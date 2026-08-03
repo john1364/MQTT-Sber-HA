@@ -422,6 +422,24 @@ class SberHAEntitiesTVView(HomeAssistantView):
         return web.json_response({"entities": entities})
 
 
+# ── GET /api/sber_mqtt/ha_entities/intercom ───────────────────────────
+
+class SberHAEntitiesIntercomView(HomeAssistantView):
+    """Список сущностей для домофона: switch, button, lock, input_boolean."""
+
+    url  = "/api/sber_mqtt/ha_entities/intercom"
+    name = "api:sber_mqtt:ha_entities_intercom"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        pass
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entities = get_ha_entities(hass, ["switch", "button", "input_button", "lock", "input_boolean"])
+        return web.json_response({"entities": entities})
+
+
 # ── GET /api/sber_mqtt/ha_entities/water_sensors ──────────────────────────
 
 class SberHAEntitiesWaterSensorView(HomeAssistantView):

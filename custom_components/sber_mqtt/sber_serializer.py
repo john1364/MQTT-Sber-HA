@@ -77,6 +77,7 @@ from .const import (
     DEVICE_TYPE_HVAC_RADIATOR,
     DEVICE_TYPE_HVAC_FAN,
     DEVICE_TYPE_TV,
+    DEVICE_TYPE_INTERCOM,
     HA_HVAC_MODE_TO_SBER,
     HA_MODE_TO_SBER_AIR_FLOW,
     SIGNAL_STRENGTH_LOW_THRESHOLD,
@@ -171,6 +172,8 @@ class SberSerializer:
             return self._hvac_fan_config(device_id, device)
         if device_type == DEVICE_TYPE_TV:
             return self._tv_config(device_id, device)
+        if device_type == DEVICE_TYPE_INTERCOM:
+            return self._intercom_config(device_id, device)
         _LOGGER.warning("Неизвестный тип устройства: %s", device_type)
         return None
 
@@ -783,6 +786,31 @@ class SberSerializer:
             entry["room"] = device["room"]
         return entry
 
+    def _intercom_config(self, device_id: str, device: dict) -> dict:
+        """Конфиг для домофона (intercom)."""
+        attrs    = device.get("attributes", {})
+        features = ["online", "unlock"]
+        if attrs.get("incoming_call_entity"):
+            features.append("incoming_call")
+
+        entry = {
+            "id": device_id,
+            "name": device.get("name", device_id),
+            "hw_version": HW_VERSION,
+            "sw_version": SW_VERSION,
+            "model": {
+                "id": "ID_intercom",
+                "manufacturer": MANUFACTURER,
+                "model": "Model_intercom",
+                "category": "intercom",
+                "features": features,
+            },
+            "model_id": "",
+        }
+        if device.get("room"):
+            entry["room"] = device["room"]
+        return entry
+
     def _humidifier_config(self, device_id: str, device: dict) -> dict:
         """Конфиг для увлажнителя воздуха (hvac_humidifier).
 
@@ -936,6 +964,22 @@ class SberSerializer:
             }
         }
         return json.dumps(payload, ensure_ascii=False)
+
+    def build_intercom_state_payload(
+        self,
+        device_id: str,
+        incoming_call: bool | None = None,
+    ) -> str:
+        """Состояние домофона."""
+        states: list[dict] = [
+            {"key": "online", "value": {"type": "BOOL", "bool_value": True}},
+        ]
+        if incoming_call is not None:
+            states.append({
+                "key": "incoming_call",
+                "value": {"type": "BOOL", "bool_value": incoming_call},
+            })
+        return json.dumps({"devices": {device_id: {"states": states}}}, ensure_ascii=False)
 
     def build_tv_state_payload(
         self,

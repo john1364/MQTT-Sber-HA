@@ -63,6 +63,8 @@ class HACommandHandler:
             await self._handle_hvac_fan_command(device, states)
         elif device_type == "tv":
             await self._handle_tv_command(device, states)
+        elif device_type == "intercom":
+            await self._handle_intercom_command(device, states)
 
         # ── Датчики — команды не принимают ───────────────────────────────
         elif device_type in ("sensor_temp", "water_leak", "smoke", "sensor_door", "sensor_air"):
@@ -388,6 +390,27 @@ class HACommandHandler:
                         )
                 else:
                     _LOGGER.warning("Fan %s: неизвестная скорость '%s' или домен %s", device.get("id"), sber_flow, domain)
+
+    async def _handle_intercom_command(self, device: dict, states: list) -> None:
+        """Обрабатывает команды домофона: unlock → открыть дверь."""
+        attrs     = device.get("attributes", {})
+        entity_id = attrs.get("entity_id", "")
+        domain    = entity_id.split(".")[0] if entity_id else ""
+
+        for state in states:
+            key = state.get("key", "")
+            if key == "unlock":
+                val_obj = state.get("value", {})
+                is_unlock = val_obj.get("bool_value", True) if val_obj.get("type") == "BOOL" else True
+                if is_unlock:
+                    if domain == "lock":
+                        svc = "open"
+                        self._track_ha_command(device, states, "lock", svc, {"entity_id": entity_id})
+                        await self._hass.services.async_call("lock", svc, {"entity_id": entity_id}, blocking=False)
+                    else:
+                        svc = "turn_on"
+                        self._track_ha_command(device, states, "homeassistant", svc, {"entity_id": entity_id})
+                        await self._hass.services.async_call("homeassistant", svc, {"entity_id": entity_id}, blocking=False)
 
     async def _handle_tv_command(self, device: dict, states: list) -> None:
         """Обрабатывает команды управления телевизором от Сбера."""

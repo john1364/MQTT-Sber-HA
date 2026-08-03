@@ -33,6 +33,7 @@ from .const import (
     DEVICE_TYPE_HVAC_RADIATOR,
     DEVICE_TYPE_HVAC_FAN,
     DEVICE_TYPE_TV,
+    DEVICE_TYPE_INTERCOM,
 )
 
 if TYPE_CHECKING:
@@ -387,6 +388,14 @@ def build_current_state_payload(
         is_muted = ts.attributes.get("is_volume_muted")
         src = ts.attributes.get("source")
         return serializer.build_tv_state_payload(device_id, is_on, vol, is_muted, src)
+
+    # ── Домофон ─────────────────────────────────────────────────────────
+    if device_type == DEVICE_TYPE_INTERCOM:
+        entity_id = attrs.get("entity_id", "")
+        return serializer.build_intercom_state_payload(
+            device_id,
+            incoming_call=_sensor_bool(hass, attrs.get("incoming_call_entity")),
+        )
 
     # ── Чайник ───────────────────────────────────────────────────────────
     if device_type == DEVICE_TYPE_KETTLE:
