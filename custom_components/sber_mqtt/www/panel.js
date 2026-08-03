@@ -271,10 +271,11 @@ function editDevice(id){
   wData={id:d.id,name:d.name,room:d.room||''};
   const a=d.attributes||{};
   for(const [k,v] of Object.entries(a)){wData[k]=v;wData[k+'_name']=v;wData[k+'_area']='';}
-  wStep=2; // начинаем с шага выбора сущностей
+  wStep=1;
   document.getElementById('wiz').style.display='';
   renderWiz();
-  wizNext(); // триггерим загрузку данных для шага 2
+  // Программно жмём «Далее» чтобы попасть на шаг 2 с загрузкой данных
+  setTimeout(()=>document.getElementById('btnNext')?.click(),100);
 }
 async function doDelete(){
   if(!delId)return;const id=delId;closeConf();

@@ -351,11 +351,11 @@ class HACommandHandler:
             if key == "on_off":
                 is_on = _parse_bool(val_obj)
                 if domain in ("switch", "input_boolean"):
-                    svc_domain = "homeassistant"
-                    service    = "turn_on" if is_on else "turn_off"
+                    svc_domain, service = "homeassistant", ("turn_on" if is_on else "turn_off")
+                elif domain == "climate":
+                    svc_domain, service = "climate", ("turn_on" if is_on else "turn_off")
                 else:
-                    svc_domain = "fan"
-                    service    = "turn_on" if is_on else "turn_off"
+                    svc_domain, service = "fan", ("turn_on" if is_on else "turn_off")
                 _LOGGER.info("Fan %s: on_off=%s → %s.%s", device.get("id"), is_on, svc_domain, service)
                 self._track_ha_command(device, states, svc_domain, service, {"entity_id": entity_id})
                 await self._hass.services.async_call(
@@ -364,18 +364,30 @@ class HACommandHandler:
 
             elif key == "hvac_air_flow_power":
                 sber_flow = val_obj.get("enum_value", "")
-                pct = SBER_AIR_FLOW_TO_FAN_PCT.get(sber_flow)
-                if pct is not None and domain == "fan":
-                    _LOGGER.info("Fan %s: hvac_air_flow_power=%s → set_percentage=%d", device.get("id"), sber_flow, pct)
-                    self._track_ha_command(device, states, "fan", "set_percentage",
-                                           {"entity_id": entity_id, "percentage": pct})
+                if domain == "climate":
+                    # Для climate-бризера — set_fan_mode
+                    fan_mode = sber_flow
+                    _LOGGER.info("Fan %s(climate): hvac_air_flow_power=%s → set_fan_mode", device.get("id"), sber_flow)
+                    self._track_ha_command(device, states, "climate", "set_fan_mode",
+                                           {"entity_id": entity_id, "fan_mode": fan_mode})
                     await self._hass.services.async_call(
-                        "fan", "set_percentage",
-                        {"entity_id": entity_id, "percentage": pct},
+                        "climate", "set_fan_mode",
+                        {"entity_id": entity_id, "fan_mode": fan_mode},
                         blocking=False,
                     )
+                elif domain == "fan":
+                    pct = SBER_AIR_FLOW_TO_FAN_PCT.get(sber_flow)
+                    if pct is not None:
+                        _LOGGER.info("Fan %s: hvac_air_flow_power=%s → set_percentage=%d", device.get("id"), sber_flow, pct)
+                        self._track_ha_command(device, states, "fan", "set_percentage",
+                                               {"entity_id": entity_id, "percentage": pct})
+                        await self._hass.services.async_call(
+                            "fan", "set_percentage",
+                            {"entity_id": entity_id, "percentage": pct},
+                            blocking=False,
+                        )
                 else:
-                    _LOGGER.warning("Fan %s: неизвестная скорость '%s' или не fan-домен", device.get("id"), sber_flow)
+                    _LOGGER.warning("Fan %s: неизвестная скорость '%s' или домен %s", device.get("id"), sber_flow, domain)
 
     async def _handle_tv_command(self, device: dict, states: list) -> None:
         """Обрабатывает команды управления телевизором от Сбера."""

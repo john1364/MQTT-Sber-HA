@@ -348,27 +348,27 @@ def build_current_state_payload(
         if not fs:
             return None
         is_on = fs.state != "off"
-        # Скорость: из preset_mode → Sber enum, или из percentage → ближайший
+        domain = entity_id.split(".")[0] if entity_id else "fan"
         air_flow_power: str | None = None
-        pct = fs.attributes.get("percentage")
-        preset = fs.attributes.get("preset_mode")
-        if preset:
-            air_flow_power = HA_MODE_TO_SBER_AIR_FLOW.get(preset)
-        if air_flow_power is None and pct is not None:
-            try:
-                p = float(pct)
-                if p <= 15:
-                    air_flow_power = "quiet"
-                elif p <= 35:
-                    air_flow_power = "low"
-                elif p <= 65:
-                    air_flow_power = "medium"
-                elif p <= 85:
-                    air_flow_power = "high"
-                else:
-                    air_flow_power = "turbo"
-            except (ValueError, TypeError):
-                pass
+        if domain == "climate":
+            fan_mode = fs.attributes.get("fan_mode")
+            if fan_mode:
+                air_flow_power = HA_MODE_TO_SBER_AIR_FLOW.get(fan_mode)
+        else:
+            pct = fs.attributes.get("percentage")
+            preset = fs.attributes.get("preset_mode")
+            if preset:
+                air_flow_power = HA_MODE_TO_SBER_AIR_FLOW.get(preset)
+            if air_flow_power is None and pct is not None:
+                try:
+                    p = float(pct)
+                    if p <= 15:      air_flow_power = "quiet"
+                    elif p <= 35:    air_flow_power = "low"
+                    elif p <= 65:    air_flow_power = "medium"
+                    elif p <= 85:    air_flow_power = "high"
+                    else:            air_flow_power = "turbo"
+                except (ValueError, TypeError):
+                    pass
         return serializer.build_hvac_fan_state_payload(device_id, is_on, air_flow_power)
 
     # ── Телевизор ───────────────────────────────────────────────────────

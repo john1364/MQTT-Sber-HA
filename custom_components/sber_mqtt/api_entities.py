@@ -11,6 +11,16 @@ from .ha_helpers import get_entities_for_relay, get_sensor_entities, get_ha_enti
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _safe_pct(s):
+    if not s: return None
+    pct = s.attributes.get("percentage")
+    if pct is not None:
+        try: return int(float(pct))
+        except (ValueError, TypeError): return None
+    return None
+
+
 # ── GET /api/sber_mqtt/ha_entities/relay ──────────────────────────────────
 
 class SberHAEntitiesRelayView(HomeAssistantView):
@@ -361,7 +371,7 @@ class SberHAEntitiesRadiatorView(HomeAssistantView):
 # ── GET /api/sber_mqtt/ha_entities/hvac_fan ───────────────────────────────
 
 class SberHAEntitiesFanView(HomeAssistantView):
-    """Список fan и switch сущностей HA для бризера/вентилятора."""
+    """Список fan, climate и switch сущностей HA для бризера/вентилятора."""
 
     url  = "/api/sber_mqtt/ha_entities/hvac_fan"
     name = "api:sber_mqtt:ha_entities_hvac_fan"
@@ -372,18 +382,18 @@ class SberHAEntitiesFanView(HomeAssistantView):
 
     async def get(self, request: web.Request) -> web.Response:
         hass: HomeAssistant = request.app["hass"]
-        def _pct(s, e):
-            if not s: return None
-            pct = s.attributes.get("percentage")
-            if pct is not None:
-                try: return int(float(pct))
-                except (ValueError, TypeError): return None
-            return None
+        # fan entities
         entities = get_ha_entities(hass, "fan", extra_fields={
-            "percentage":     _pct,
-            "preset_modes":   lambda s, e: s.attributes.get("preset_modes", []) if s else [],
-            "supported_features": lambda s, e: s.attributes.get("supported_features", 0) if s else 0,
+            "percentage": lambda s, e: _safe_pct(s),
+            "preset_modes": lambda s, e: s.attributes.get("preset_modes", []) if s else [],
         })
+        # climate entities (бризеры часто climate)
+        climate_entities = get_ha_entities(hass, "climate", extra_fields={
+            "percentage": lambda s, e: _safe_pct(s),
+            "preset_modes": lambda s, e: s.attributes.get("preset_modes", []) if s else [],
+        })
+        entities.extend(climate_entities)
+        # switch fallback
         switch_entities = get_ha_entities(hass, ["switch", "input_boolean"])
         entities.extend(switch_entities)
         return web.json_response({"entities": entities})
