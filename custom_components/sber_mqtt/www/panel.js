@@ -1488,7 +1488,16 @@ function renderStep2Kettle(){
       Текущая и целевая температура воды подтягиваются автоматически из атрибутов сущности.
     </div>
     ${sel?`<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border,#e0e0e0)">
-      ${renderSensorField('water_entity','💧 Уровень воды (опционально)','moisture')}
+      <div class="sf"><label>💧 Уровень воды (опционально)</label>
+        <button class="sf-btn ${wData.water_entity?'filled':''}" onclick="openKettleWater()">
+          <span>${wData.water_entity?(wData.water_entity_name||wData.water_entity):'Выбрать сенсор…'}</span><span>${wData.water_entity?'✓':'▾'}</span></button>
+        ${wData.water_entity?`<div class="sf-sub">${esc(wData.water_entity)} <button class="sf-clr" onclick="delete wData.water_entity;delete wData.water_entity_name;document.getElementById('wizContent').innerHTML=renderStep2Kettle()">✕</button></div>`:''}
+      </div>
+      <div id="kettleWaterPicker" style="display:none;margin-top:6px">
+        <div class="picker">
+          <div class="p-list" style="max-height:140px" id="kettleWaterList"></div>
+        </div>
+      </div>
     </div>`:''}`;
 }
 
@@ -1502,6 +1511,22 @@ function kettleItems(){
 
 function pickKettleEntity(eid,name,area){
   wData.entity_id=eid;wData.entity_name=name;wData.entity_area=area;
+  document.getElementById('wizContent').innerHTML=renderStep2Kettle();
+}
+
+function openKettleWater(){
+  const el=document.getElementById('kettleWaterPicker');
+  el.style.display=el.style.display==='none'?'':'none';
+  const list=haSensors.filter(s=>!sFilter||(s.entity_id+s.friendly_name).toLowerCase().includes(sFilter));
+  document.getElementById('kettleWaterList').innerHTML=list.length
+    ?list.map(s=>`<div class="p-item ${wData.water_entity===s.entity_id?'sel':''}" onclick="pickKettleWater('${esc(s.entity_id)}','${esc(s.friendly_name)}')">
+      <span class="dom-badge">${esc(s.device_class)}</span><span class="p-area">${esc(s.area||'—')}</span>
+      <span class="p-name">${esc(s.friendly_name)}</span><span class="p-eid">${esc(s.entity_id)}</span></div>`).join('')
+    :'<div class="p-empty">Нет сенсоров</div>';
+}
+function pickKettleWater(eid,name){
+  wData.water_entity=eid;wData.water_entity_name=name;
+  document.getElementById('kettleWaterPicker').style.display='none';
   document.getElementById('wizContent').innerHTML=renderStep2Kettle();
 }
 
