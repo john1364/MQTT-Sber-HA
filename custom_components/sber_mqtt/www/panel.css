@@ -102,9 +102,34 @@ body {
   margin-bottom: 16px;
   gap: 10px;
   flex-wrap: wrap;
+  position: sticky;
+  top: 56px;
+  z-index: 99;
+  background: var(--primary-background-color, var(--card-bg, var(--card)));
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border, #e0e0e0);
 }
 
 .toolbar-l { font-size: 14px; color: var(--muted); }
+
+.search-bar {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border, #e0e0e0);
+  border-radius: 8px;
+  margin: 0 0 10px 0;
+  overflow: hidden;
+}
+.search-bar input {
+  border: none;
+  background: none;
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 13px;
+  outline: none;
+  color: var(--text, #222);
+}
+.search-bar input::placeholder { color: var(--muted); }
 
 /* ═══════════════════════════════════════════════════════════
    КНОПКИ
@@ -578,12 +603,12 @@ input:focus, select:focus {
 
 .fab-top {
   position: fixed;
-  bottom: 88px;
+  bottom: 24px;
   right: 32px;
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--card-bg, #fff);
+  background: var(--primary-background-color, var(--card-bg, var(--card)));
   color: var(--primary);
   border: 1px solid var(--border, #e0e0e0);
   cursor: pointer;
