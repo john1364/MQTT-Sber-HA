@@ -40,6 +40,7 @@ from .const import (
     DEVICE_TYPE_HVAC_FAN,
     DEVICE_TYPE_TV,
     DEVICE_TYPE_INTERCOM,
+    DEVICE_TYPE_SENSOR_PIR,
     RELAY_STATEFUL_DOMAINS,
     RELAY_BUTTON_DOMAINS,
     SCENARIO_BUTTON_STATEFUL_DOMAINS,
@@ -234,6 +235,14 @@ class StateTracker:
                 if inc_entity:
                     watched.add(inc_entity)
 
+            elif device_type == DEVICE_TYPE_SENSOR_PIR:
+                entity_id = attrs.get("entity_id", "")
+                if entity_id:
+                    watched.add(entity_id)
+                for key in ("battery_entity",):
+                    if attrs.get(key):
+                        watched.add(attrs[key])
+
         if not watched:
             _LOGGER.debug("Нет сущностей для отслеживания")
             return
@@ -364,6 +373,9 @@ class StateTracker:
 
         elif device_type == DEVICE_TYPE_INTERCOM:
             watched = {attrs.get("entity_id", ""), attrs.get("incoming_call_entity", "")}
+
+        elif device_type == DEVICE_TYPE_SENSOR_PIR:
+            watched = {attrs.get("entity_id", ""), attrs.get("battery_entity", "")}
 
         else:
             return

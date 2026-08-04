@@ -49,6 +49,7 @@ DEVICE_TYPE_HVAC_RADIATOR   = "hvac_radiator"    # Термоголовка ра
 DEVICE_TYPE_HVAC_FAN        = "hvac_fan"         # Вентилятор / бризер
 DEVICE_TYPE_TV              = "tv"               # Телевизор
 DEVICE_TYPE_INTERCOM         = "intercom"         # Домофон
+DEVICE_TYPE_SENSOR_PIR       = "sensor_pir"       # Датчик движения
 
 # Маппинг скоростей вентилятора Сбер → HA (humidifier mode)
 # Сбер: auto | low | medium | high | turbo | quiet
@@ -145,6 +146,7 @@ SUPPORTED_DEVICE_TYPES = {
     DEVICE_TYPE_HVAC_FAN:        "Бризер / вентилятор",
     DEVICE_TYPE_TV:              "Телевизор",
     DEVICE_TYPE_INTERCOM:        "Домофон",
+    DEVICE_TYPE_SENSOR_PIR:      "Датчик движения",
 }
 
 # ── Домены HA для типа "реле" ─────────────────────────────────────────────

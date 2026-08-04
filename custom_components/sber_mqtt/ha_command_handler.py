@@ -38,6 +38,8 @@ class HACommandHandler:
         device_type = device.get("device_type")
         device_id = device.get("id")
 
+        _LOGGER.info("CMD %s (%s): %s", device_id, device_type, states)
+
         # ── Управляемые устройства ───────────────────────────────────────
         if device_type == "relay":
             await self._handle_relay_command(device, states)
@@ -67,7 +69,7 @@ class HACommandHandler:
             await self._handle_intercom_command(device, states)
 
         # ── Датчики — команды не принимают ───────────────────────────────
-        elif device_type in ("sensor_temp", "water_leak", "smoke", "sensor_door", "sensor_air"):
+        elif device_type in ("sensor_temp", "water_leak", "smoke", "sensor_door", "sensor_air", "sensor_pir"):
             _LOGGER.debug("Команда для датчика %s проигнорирована", device.get("id"))
 
         # ── Сценарные кнопки — только отправляют события в Сбер ─────────
@@ -418,6 +420,8 @@ class HACommandHandler:
         entity_id = attrs.get("entity_id", "")
         domain    = entity_id.split(".")[0] if entity_id else "media_player"
 
+        _LOGGER.info("TV %s: raw command = %s", device.get("id"), states)
+
         for state in states:
             key     = state.get("key", "")
             val_obj = state.get("value", {})
@@ -476,6 +480,16 @@ class HACommandHandler:
                     await self._hass.services.async_call(
                         domain, "select_source", {"entity_id": entity_id, "source": src}, blocking=False
                     )
+
+            elif key in ("custom_key", "direction", "number", "channel_int"):
+                # Эти команды не маппятся на стандартные HA-сервисы —
+                # генерируем событие для automation
+                value = val_obj.get("enum_value") or val_obj.get("integer_value")
+                self._hass.bus.async_fire("sber_tv_command", {
+                    "entity_id": entity_id,
+                    "key": key,
+                    "value": value,
+                })
 
     async def _handle_vacuum_command(self, device: dict, states: list) -> None:
         """Обрабатывает команды управления пылесосом от Сбера.

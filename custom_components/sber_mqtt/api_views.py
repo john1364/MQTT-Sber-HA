@@ -35,6 +35,7 @@ from .api_entities import (
     SberHAEntitiesTVView,
     SberHAEntitiesWaterSensorView,
     SberHAEntitiesIntercomView,
+    SberHAEntitiesSensorPirView,
 )
 from .api_devtools import (
     devtools_on_command,
@@ -67,6 +68,7 @@ __all__ = [
     "SberHAEntitiesTVView",
     "SberHAEntitiesWaterSensorView",
     "SberHAEntitiesIntercomView",
+    "SberHAEntitiesSensorPirView",
     "devtools_on_command", "devtools_on_publish",
     "SberDevConfigRawView", "SberDevStateView", "SberDevStateRawView",
     "SberDevCommandsHistoryView", "SberDevCommandsStreamView",

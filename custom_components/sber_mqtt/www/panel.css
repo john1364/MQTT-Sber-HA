@@ -547,3 +547,60 @@ input:focus, select:focus {
 .toast.show { transform: translateY(0); opacity: 1; }
 .toast.ok   { background: var(--primary); }
 .toast.err  { background: var(--danger); }
+
+/* Floating Action Button */
+.fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 3px 10px rgba(0,0,0,.25);
+  z-index: 100;
+  opacity: 0;
+  transform: scale(.8);
+  transition: opacity .2s, transform .2s;
+  pointer-events: none;
+}
+.fab.visible {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.fab-top {
+  position: fixed;
+  bottom: 88px;
+  right: 32px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--card-bg, #fff);
+  color: var(--primary);
+  border: 1px solid var(--border, #e0e0e0);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(0,0,0,.15);
+  z-index: 100;
+  opacity: 0;
+  transform: scale(.8);
+  transition: opacity .2s, transform .2s;
+  pointer-events: none;
+}
+.fab-top.visible {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
