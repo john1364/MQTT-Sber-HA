@@ -34,6 +34,7 @@ from .const import (
     DEVICE_TYPE_HVAC_FAN,
     DEVICE_TYPE_TV,
     DEVICE_TYPE_INTERCOM,
+    DEVICE_TYPE_SENSOR_PIR,
 )
 
 if TYPE_CHECKING:
@@ -395,6 +396,18 @@ def build_current_state_payload(
         return serializer.build_intercom_state_payload(
             device_id,
             incoming_call=_sensor_bool(hass, attrs.get("incoming_call_entity")),
+        )
+
+    # ── Датчик движения ─────────────────────────────────────────────────
+    if device_type == DEVICE_TYPE_SENSOR_PIR:
+        entity_id = attrs.get("entity_id", "")
+        ps = hass.states.get(entity_id)
+        if not ps:
+            return None
+        return serializer.build_sensor_pir_state_payload(
+            device_id,
+            ps.state == "on",
+            _sensor_float(hass, attrs.get("battery_entity")),
         )
 
     # ── Чайник ───────────────────────────────────────────────────────────

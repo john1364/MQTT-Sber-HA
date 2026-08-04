@@ -440,6 +440,24 @@ class SberHAEntitiesIntercomView(HomeAssistantView):
         return web.json_response({"entities": entities})
 
 
+# ── GET /api/sber_mqtt/ha_entities/sensor_pir ─────────────────────────
+
+class SberHAEntitiesSensorPirView(HomeAssistantView):
+    """Список binary_sensor с device_class motion/occupancy для датчика движения."""
+
+    url  = "/api/sber_mqtt/ha_entities/sensor_pir"
+    name = "api:sber_mqtt:ha_entities_sensor_pir"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        pass
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entities = get_ha_entities(hass, "binary_sensor")
+        return web.json_response({"entities": entities})
+
+
 # ── GET /api/sber_mqtt/ha_entities/water_sensors ──────────────────────────
 
 class SberHAEntitiesWaterSensorView(HomeAssistantView):

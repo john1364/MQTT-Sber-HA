@@ -78,6 +78,7 @@ from .const import (
     DEVICE_TYPE_HVAC_FAN,
     DEVICE_TYPE_TV,
     DEVICE_TYPE_INTERCOM,
+    DEVICE_TYPE_SENSOR_PIR,
     HA_HVAC_MODE_TO_SBER,
     HA_MODE_TO_SBER_AIR_FLOW,
     SIGNAL_STRENGTH_LOW_THRESHOLD,
@@ -174,6 +175,8 @@ class SberSerializer:
             return self._tv_config(device_id, device)
         if device_type == DEVICE_TYPE_INTERCOM:
             return self._intercom_config(device_id, device)
+        if device_type == DEVICE_TYPE_SENSOR_PIR:
+            return self._sensor_pir_config(device_id, device)
         _LOGGER.warning("Неизвестный тип устройства: %s", device_type)
         return None
 
@@ -640,6 +643,31 @@ class SberSerializer:
             entry["room"] = device["room"]
         return entry
 
+    def _sensor_pir_config(self, device_id: str, device: dict) -> dict:
+        """Конфиг для датчика движения (sensor_pir)."""
+        attrs    = device.get("attributes", {})
+        features = ["online", "pir_state"]
+        if attrs.get("battery_entity"):
+            features.append("battery_percentage")
+
+        entry = {
+            "id": device_id,
+            "name": device.get("name", device_id),
+            "hw_version": HW_VERSION,
+            "sw_version": SW_VERSION,
+            "model": {
+                "id": "ID_sensor_pir",
+                "manufacturer": MANUFACTURER,
+                "model": "Model_sensor_pir",
+                "category": "sensor_pir",
+                "features": features,
+            },
+            "model_id": "",
+        }
+        if device.get("room"):
+            entry["room"] = device["room"]
+        return entry
+
     def _sensor_air_config(self, device_id: str, device: dict) -> dict:
         """Конфиг для датчика качества воздуха (sensor_air).
 
@@ -764,22 +792,23 @@ class SberSerializer:
     def _tv_config(self, device_id: str, device: dict) -> dict:
         """Конфиг для телевизора (tv).
 
-        Всегда включает: online, on_off, volume, mute, channel, source.
-        """
-        features = ["online", "on_off", "volume", "mute", "channel", "source"]
+        В MQTT DIY работают только: online, on_off, mute."""
+        features = ["online", "on_off", "mute"]
+
+        model: dict = {
+            "id": "ID_tv",
+            "manufacturer": MANUFACTURER,
+            "model": "Model_tv",
+            "category": "tv",
+            "features": features,
+        }
 
         entry = {
             "id": device_id,
             "name": device.get("name", device_id),
             "hw_version": HW_VERSION,
             "sw_version": SW_VERSION,
-            "model": {
-                "id": "ID_tv",
-                "manufacturer": MANUFACTURER,
-                "model": "Model_tv",
-                "category": "tv",
-                "features": features,
-            },
+            "model": model,
             "model_id": "",
         }
         if device.get("room"):
@@ -1364,6 +1393,27 @@ class SberSerializer:
                 "key": "tamper_alarm",
                 "value": {"type": "BOOL", "bool_value": tamper},
             })
+        return json.dumps({"devices": {device_id: {"states": states}}}, ensure_ascii=False)
+
+    def build_sensor_pir_state_payload(
+        self,
+        device_id: str,
+        motion: bool,
+        battery: float | None = None,
+    ) -> str:
+        """Состояние датчика движения."""
+        states: list[dict] = [
+            {"key": "online", "value": {"type": "BOOL", "bool_value": True}},
+            {"key": "pir_state", "value": {"type": "BOOL", "bool_value": motion}},
+        ]
+        if battery is not None:
+            try:
+                states.append({
+                    "key": "battery_percentage",
+                    "value": {"type": "INTEGER", "integer_value": max(0, min(100, round(float(battery))))},
+                })
+            except (ValueError, TypeError):
+                pass
         return json.dumps({"devices": {device_id: {"states": states}}}, ensure_ascii=False)
 
     def build_sensor_air_state_payload(
