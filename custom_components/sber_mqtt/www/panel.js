@@ -3,10 +3,8 @@
 
 // Floating Action Button — показывать когда кнопка «Добавить» ушла за скролл
 window.addEventListener('scroll',()=>{
-  const fab=document.querySelector('.fab');
   const fabTop=document.querySelector('.fab-top');
   const show=window.scrollY>120;
-  if(fab)fab.classList.toggle('visible',show);
   if(fabTop)fabTop.classList.toggle('visible',show);
 });
 
@@ -64,6 +62,7 @@ let wStep=1, wType=null, wData={}, haRelay=[], haSensors=[], haSocket=[], sFilte
 
 // Множество entity_id, уже используемых в добавленных устройствах
 let usedEntities=new Set();
+let devFilter='';
 function refreshUsedEntities(){
   usedEntities=new Set();
   const attrKeys=['entity_id','power_entity','current_entity','voltage_entity',
@@ -126,7 +125,10 @@ function fmtState(s) {
 // ТАБЛИЦА УСТРОЙСТВ
 // ═══════════════════════════════════════════════════════════
 function renderTable() {
-  const rows=[...devices].sort((a,b)=>{
+  let filtered = devFilter
+    ? devices.filter(d => (d.name||'').toLowerCase().includes(devFilter))
+    : [...devices];
+  const rows=filtered.sort((a,b)=>{
     const va=(a[sortField]||'').toString().toLowerCase();
     const vb=(b[sortField]||'').toString().toLowerCase();
     return sortAsc?va.localeCompare(vb,'ru'):vb.localeCompare(va,'ru');
