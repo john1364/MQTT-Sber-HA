@@ -139,9 +139,13 @@ class HACommandHandler:
 
         elif domain == "automation":
             if is_on:
-                self._track_ha_command(device, states, "automation", "trigger", {"entity_id": entity_id})
+                data = {"entity_id": entity_id}
+                trigger_id = attrs.get("trigger_id")
+                if trigger_id:
+                    data["variables"] = {"manual_trigger_id": trigger_id}
+                self._track_ha_command(device, states, "automation", "trigger", data)
                 await self._hass.services.async_call(
-                    "automation", "trigger", {"entity_id": entity_id}, blocking=False
+                    "automation", "trigger", data, blocking=False
                 )
             # else: на выключение ничего не делаем
 
