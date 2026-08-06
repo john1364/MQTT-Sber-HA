@@ -433,9 +433,9 @@ function renderStep1(){
   ];
   return groups.map(g=>`
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:14px 0 6px;padding-left:2px">${g.label}</div>
-    ${g.items.map(t=>`<div class="type-card ${wType===t.id?'sel':''}" onclick="pickType('${t.id}')">
-      <div class="type-icon">${t.icon}</div>
-      <div><div class="type-name">${t.name}</div><div class="type-desc">${t.desc}</div></div></div>`).join('')}
+    <div class="type-grid">${g.items.map(t=>`<div class="type-card ${wType===t.id?'sel':''}" onclick="pickType('${t.id}')">
+      <div class="type-icon" style="font-size:22px">${t.icon}</div>
+      <div style="min-width:0"><div class="type-name" style="font-size:12px;margin-bottom:2px">${t.name}</div><div class="type-desc" style="font-size:10px">${t.desc}</div></div></div>`).join('')}</div>
   `).join('');
 }
 function pickType(t){wType=t;renderWiz();}
@@ -697,7 +697,9 @@ function renderStep3(){
     <input type="text" id="dId" value="${esc(wData.id||slugify(wData.name||defName))}" placeholder="relay_living_room"/>
     <div class="hint">Только a–z, 0–9, _ . Уникальный идентификатор в Сбере.</div></div>
     <div class="fg"><label>Комната</label>
-    <input type="text" id="dRoom" value="${esc(wData.room!==undefined?wData.room:defRoom)}" placeholder="Гостиная"/></div>`;
+    <input type="text" id="dRoom" value="${esc(wData.room!==undefined?wData.room:defRoom)}" placeholder="Гостиная"/>
+    <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${[...new Set(devices.map(d=>d.room).filter(Boolean))].sort().map(r=>`<span class="room-chip" onclick="document.getElementById('dRoom').value='${esc(r)}'" style="cursor:pointer;background:var(--primary-lt);color:var(--primary-dk);padding:2px 8px;border-radius:12px;font-size:11px;white-space:nowrap">${esc(r)}</span>`).join('')}</div></div>
+    ${wType==='automation_relay'?`<div class="fg"><label>ID триггера (опционально)</label><input type="text" value="${esc(wData.trigger_id||'')}" oninput="wData.trigger_id=this.value" placeholder="manual_trigger_id"/><div class="hint">Для автоматизаций с несколькими триггерами</div></div>`:''}`;
 }
 function autoId(){if(wData._edit)return;const n=document.getElementById('dName')?.value||'';const f=document.getElementById('dId');if(f&&(!wData.id||f.value===slugify(wData.name||'')))f.value=slugify(n);}
 
@@ -779,7 +781,7 @@ async function submitDevice(){
     attrs.entity_id=wData.entity_id;attrs.entity_name=wData.entity_name||'';
     if(wData.battery_entity) attrs.battery_entity=wData.battery_entity;
   }
-  else if(wType==='automation_relay'){attrs.entity_id=wData.entity_id;attrs.entity_name=wData.entity_name||'';}
+  else if(wType==='automation_relay'){attrs.entity_id=wData.entity_id;attrs.entity_name=wData.entity_name||'';if(wData.trigger_id)attrs.trigger_id=wData.trigger_id;}
   else if(wType==='script_relay'){attrs.entity_id=wData.entity_id;attrs.entity_name=wData.entity_name||'';}
   else if(wType==='sensor_air'){['temperature_entity','humidity_entity','co2_entity','pm25_entity','tvoc_entity','battery_entity','signal_entity'].forEach(k=>{if(wData[k])attrs[k]=wData[k];});}
   else{['temperature_entity','humidity_entity','battery_entity'].forEach(k=>{if(wData[k])attrs[k]=wData[k];});}
