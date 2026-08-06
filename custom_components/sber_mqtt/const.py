@@ -151,11 +151,11 @@ SUPPORTED_DEVICE_TYPES = {
 
 # ── Домены HA для типа "реле" ─────────────────────────────────────────────
 # Только сущности из этих доменов можно привязать как реле
-RELAY_DOMAINS = {"switch", "input_boolean", "script", "button", "input_button", "light", "media_player"}
+RELAY_DOMAINS = {"switch", "input_boolean", "button", "input_button", "light", "media_player"}
 
 # Домены у которых нет состояния on/off (кнопки, сценарии)
 # Для них всегда отправляем on_off=false и не отслеживаем изменения состояния
-RELAY_BUTTON_DOMAINS = {"script", "button", "input_button"}
+RELAY_BUTTON_DOMAINS = {"script", "button", "input_button", "automation"}
 
 # Домены у которых есть состояние on/off (отслеживаем через state_tracker)
 # media_player: состояние "off" → выключен, всё остальное (on/idle/playing/paused) → включён

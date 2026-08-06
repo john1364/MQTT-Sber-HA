@@ -38,7 +38,7 @@ class HACommandHandler:
         device_type = device.get("device_type")
         device_id = device.get("id")
 
-        _LOGGER.info("CMD %s (%s): %s", device_id, device_type, states)
+        _LOGGER.debug("CMD %s (%s): %s", device_id, device_type, states)
 
         # ── Управляемые устройства ───────────────────────────────────────
         if device_type == "relay":
@@ -104,16 +104,14 @@ class HACommandHandler:
 
         domain = entity_id.split(".")[0]
 
-        # Ищем команду on_off в списке состояний.
-        # Протокол Сбера: bool_value=true → включить, отсутствие bool_value → выключить
         on_off_value = None
         for state in states:
             if state.get("key") == "on_off":
                 val_obj = state.get("value", {})
                 on_off_value = _parse_bool(val_obj)
-                _LOGGER.info(
-                    "Реле %s: on_off=%s (raw bool_value=%r)",
-                    device.get("id"), on_off_value, val_obj.get("bool_value"),
+                _LOGGER.debug(
+                    "Реле %s: on_off=%r, domain=%s, entity_id=%s",
+                    device.get("id"), on_off_value, domain, entity_id,
                 )
                 break
 
@@ -129,6 +127,8 @@ class HACommandHandler:
             entity_id, domain, on_off_value,
         )
 
+        is_on = on_off_value
+
         if domain == "script":
             # Сценарий запускается независимо от значения on_off
             script_name = entity_id.split(".", 1)[1]  # "script.my_scene" → "my_scene"
@@ -136,6 +136,14 @@ class HACommandHandler:
             await self._hass.services.async_call(
                 "script", script_name, {}, blocking=False
             )
+
+        elif domain == "automation":
+            if is_on:
+                self._track_ha_command(device, states, "automation", "trigger", {"entity_id": entity_id})
+                await self._hass.services.async_call(
+                    "automation", "trigger", {"entity_id": entity_id}, blocking=False
+                )
+            # else: на выключение ничего не делаем
 
         elif domain in ("button", "input_button"):
             # Кнопки нажимаются независимо от значения on_off
