@@ -706,7 +706,7 @@ function renderStep3(){
     <div class="fg"><label>Комната</label>
     <input type="text" id="dRoom" value="${esc(wData.room!==undefined?wData.room:defRoom)}" placeholder="Гостиная"/>
     <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${[...new Set(devices.map(d=>d.room).filter(Boolean))].sort().map(r=>`<span class="room-chip" onclick="document.getElementById('dRoom').value='${esc(r)}'" style="cursor:pointer;background:var(--primary-lt);color:var(--primary-dk);padding:2px 8px;border-radius:12px;font-size:11px;white-space:nowrap">${esc(r)}</span>`).join('')}</div></div>
-    ${(wType==='automation_relay'||(wType==='relay'&&wData.entity_id&&wData.entity_id.startsWith('automation.')))?`<div class="fg"><label>ID триггера (опционально)</label><input type="text" value="${esc(wData.trigger_id||'')}" oninput="wData.trigger_id=this.value" placeholder="manual_trigger_id"/><div class="hint">Для автоматизаций с несколькими триггерами</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px" id="triggerChips"></div></div>`:''}`;
+    ${(wType==='automation_relay'||(wType==='relay'&&wData.entity_id&&wData.entity_id.startsWith('automation.')))?`<div class="fg"><label>ID триггера (опционально)</label><input type="text" id="triggerIdInput" value="${esc(wData.trigger_id||'')}" oninput="wData.trigger_id=this.value" placeholder="manual_trigger_id"/><div class="hint">Для автоматизаций с несколькими триггерами</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px" id="triggerChips"></div></div>`:''}`;
 }
 function autoId(){if(wData._edit)return;const n=document.getElementById('dName')?.value||'';const f=document.getElementById('dId');if(f&&(!wData.id||f.value===slugify(wData.name||'')))f.value=slugify(n);}
 
@@ -718,7 +718,13 @@ async function loadTriggerChips(){
     if(r1.automation_id){
       const r2=await api('/api/config/automation/config/'+r1.automation_id);
       const ids=(r2.triggers||[]).map(t=>t.id).filter(Boolean);
-      c.innerHTML=ids.map(t=>`<span class="room-chip" onclick="var inp=document.querySelector('#dName~div input[type=text]');if(inp){inp.value='${esc(t)}';wData.trigger_id='${esc(t)}'}" style="cursor:pointer;background:var(--primary-lt);color:var(--primary-dk);padding:2px 8px;border-radius:12px;font-size:11px;white-space:nowrap">${esc(t)}</span>`).join('');
+      c.innerHTML=ids.map(t=>{
+        const used=devices.some(d=>d.attributes&&d.attributes.entity_id===eid&&d.attributes.trigger_id===t);
+        const bg=used?'var(--primary-lt)':'var(--bg)';
+        const clr=used?'var(--primary-dk)':'var(--muted)';
+        const brd=used?'':'border:1px solid var(--border)';
+        return'<span class="room-chip" onclick="var inp=document.getElementById(\'triggerIdInput\');if(inp){inp.value=\''+esc(t)+'\';wData.trigger_id=\''+esc(t)+'\'}" style="cursor:pointer;background:'+bg+';color:'+clr+';padding:2px 8px;border-radius:12px;font-size:11px;white-space:nowrap;'+brd+'">'+esc(t)+'</span>';
+      }).join('');
     }
   }catch(e){}}function updateNameCount(){const i=document.getElementById('dName');const c=document.getElementById('nameCount');if(i&&c){const len=(i.value||'').length;c.textContent=len+'/33';c.style.color=len>33?'var(--danger)':'';}}
 
