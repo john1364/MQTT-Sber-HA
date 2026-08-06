@@ -100,9 +100,18 @@ class SberDevicesView(HomeAssistantView):
                 {"error": f"Unsupported device_type: {device_type}"}, status=400
             )
         if registry.device_exists(device_id):
-            return web.json_response(
-                {"error": f"Device ID '{device_id}' already exists"}, status=409
-            )
+            # Upsert: обновить существующее устройство
+            existing = registry.get_device(device_id)
+            existing["name"] = name
+            if "room" in body:
+                existing["room"] = body["room"]
+            if attrs:
+                existing["attributes"] = {**existing.get("attributes", {}), **attrs}
+            await registry.async_save()
+            state_tracker.refresh()
+            config_payload = serializer.build_config_payload(registry.devices)
+            mqtt_client.publish_config(config_payload)
+            return web.json_response({"ok": True, "device": existing})
 
         # Валидация специфичная для типа устройства
         if device_type == DEVICE_TYPE_RELAY:

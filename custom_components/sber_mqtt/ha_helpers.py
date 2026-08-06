@@ -18,7 +18,7 @@ from homeassistant.helpers import (
 _LOGGER = logging.getLogger(__name__)
 
 # Домены HA которые можно привязать как реле
-RELAY_DOMAINS = ["switch", "input_boolean", "script", "button", "input_button", "light", "media_player"]
+RELAY_DOMAINS = ["switch", "input_boolean", "script", "button", "input_button", "light", "media_player", "automation"]
 
 # Домены для датчиков (только sensor)
 SENSOR_TEMP_DOMAINS = ["sensor"]
