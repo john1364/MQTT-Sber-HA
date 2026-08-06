@@ -404,7 +404,7 @@ function renderWiz(){
   if(wStep===1)c.innerHTML=renderStep1();
   else if(wStep===2){if(wType==='relay')c.innerHTML=renderStep2Relay();else if(wType==='scenario_button')c.innerHTML=renderStep2ScenarioButton();else if(wType==='hvac_ac')c.innerHTML=renderStep2HvacAc();else if(wType==='vacuum_cleaner')c.innerHTML=renderStep2Vacuum();else if(wType==='valve')c.innerHTML=renderStep2Valve();else if(wType==='light')c.innerHTML=renderStep2Light();else if(wType==='cover')c.innerHTML=renderStep2Cover();else if(wType==='water_leak')c.innerHTML=renderStep2WaterLeak();else if(wType==='humidifier')c.innerHTML=renderStep2Humidifier();else if(wType==='socket')c.innerHTML=renderStep2Socket();else if(wType==='smoke')c.innerHTML=renderStep2Smoke();else if(wType==='kettle')c.innerHTML=renderStep2Kettle();else if(wType==='sensor_door')c.innerHTML=renderStep2SensorDoor();else if(wType==='sensor_air')c.innerHTML=renderStep2SensorAir();else if(wType==='hvac_radiator')c.innerHTML=renderStep2Radiator();else if(wType==='hvac_fan')c.innerHTML=renderStep2Fan();else if(wType==='tv')c.innerHTML=renderStep2Tv();else if(wType==='intercom')c.innerHTML=renderStep2Intercom();else if(wType==='sensor_pir')c.innerHTML=renderStep2Pir();else if(wType==='automation_relay')c.innerHTML=renderStep2Automation();else if(wType==='script_relay')c.innerHTML=renderStep2Script();else c.innerHTML=renderStep2Sensor();}
   else c.innerHTML=renderStep3();
-  if(wStep===3)setTimeout(updateNameCount, 0);
+  if(wStep===3){setTimeout(updateNameCount,0);setTimeout(loadTriggerChips,100);}
 }
 
 function renderStep1(){
@@ -706,11 +706,21 @@ function renderStep3(){
     <div class="fg"><label>Комната</label>
     <input type="text" id="dRoom" value="${esc(wData.room!==undefined?wData.room:defRoom)}" placeholder="Гостиная"/>
     <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${[...new Set(devices.map(d=>d.room).filter(Boolean))].sort().map(r=>`<span class="room-chip" onclick="document.getElementById('dRoom').value='${esc(r)}'" style="cursor:pointer;background:var(--primary-lt);color:var(--primary-dk);padding:2px 8px;border-radius:12px;font-size:11px;white-space:nowrap">${esc(r)}</span>`).join('')}</div></div>
-    ${(wType==='automation_relay'||(wType==='relay'&&wData.entity_id&&wData.entity_id.startsWith('automation.')))?`<div class="fg"><label>ID триггера (опционально)</label><input type="text" value="${esc(wData.trigger_id||'')}" oninput="wData.trigger_id=this.value" placeholder="manual_trigger_id"/><div class="hint">Для автоматизаций с несколькими триггерами</div></div>`:''}`;
+    ${(wType==='automation_relay'||(wType==='relay'&&wData.entity_id&&wData.entity_id.startsWith('automation.')))?`<div class="fg"><label>ID триггера (опционально)</label><input type="text" value="${esc(wData.trigger_id||'')}" oninput="wData.trigger_id=this.value" placeholder="manual_trigger_id"/><div class="hint">Для автоматизаций с несколькими триггерами</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px" id="triggerChips"></div></div>`:''}`;
 }
 function autoId(){if(wData._edit)return;const n=document.getElementById('dName')?.value||'';const f=document.getElementById('dId');if(f&&(!wData.id||f.value===slugify(wData.name||'')))f.value=slugify(n);}
 
-function updateNameCount(){const i=document.getElementById('dName');const c=document.getElementById('nameCount');if(i&&c){const len=(i.value||'').length;c.textContent=len+'/33';c.style.color=len>33?'var(--danger)':'';}}
+async function loadTriggerChips(){
+  const c=document.getElementById('triggerChips');if(!c)return;
+  const eid=wData.entity_id;if(!eid)return;
+  try{
+    const r1=await api('/api/sber_mqtt/ha_entities/automation_triggers?entity_id='+encodeURIComponent(eid));
+    if(r1.automation_id){
+      const r2=await api('/api/config/automation/config/'+r1.automation_id);
+      const ids=(r2.triggers||[]).map(t=>t.id).filter(Boolean);
+      c.innerHTML=ids.map(t=>`<span class="room-chip" onclick="var inp=document.querySelector('#dName~div input[type=text]');if(inp){inp.value='${esc(t)}';wData.trigger_id='${esc(t)}'}" style="cursor:pointer;background:var(--primary-lt);color:var(--primary-dk);padding:2px 8px;border-radius:12px;font-size:11px;white-space:nowrap">${esc(t)}</span>`).join('');
+    }
+  }catch(e){}}function updateNameCount(){const i=document.getElementById('dName');const c=document.getElementById('nameCount');if(i&&c){const len=(i.value||'').length;c.textContent=len+'/33';c.style.color=len>33?'var(--danger)':'';}}
 
 async function submitDevice(){
   const attrs={};

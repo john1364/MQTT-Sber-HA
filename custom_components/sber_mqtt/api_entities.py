@@ -474,3 +474,28 @@ class SberHAEntitiesWaterSensorView(HomeAssistantView):
         hass: HomeAssistant = request.app["hass"]
         entities = get_sensor_entities(hass, [])
         return web.json_response({"entities": entities})
+
+
+# ── GET /api/sber_mqtt/ha_entities/automation_triggers ─────────────────
+
+class SberHAAutomationTriggersView(HomeAssistantView):
+    """Список trigger_id автоматизации."""
+
+    url  = "/api/sber_mqtt/ha_entities/automation_triggers"
+    name = "api:sber_mqtt:ha_automation_triggers"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        pass
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entity_id = request.query.get("entity_id", "")
+        ids = []
+        raw = []
+        if entity_id:
+            state = hass.states.get(entity_id)
+            if state:
+                # Отдаём automation id для запроса конфига через REST API
+                auto_id = state.attributes.get("id", "")
+                return web.json_response({"trigger_ids": [], "automation_id": auto_id})
