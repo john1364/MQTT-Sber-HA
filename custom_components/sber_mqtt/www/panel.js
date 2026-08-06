@@ -81,6 +81,12 @@ function isUsed(eid){return usedEntities.has(eid);}
 function usedCls(eid){return isUsed(eid)?'used':'';}
 function usedBadge(eid){return isUsed(eid)?'<span class="p-used-badge">уже добавлено</span>':'';}
 
+function autoBadge(eid){
+  const used=devices.filter(d=>d.attributes&&d.attributes.entity_id===eid);
+  if(!used.length)return'';
+  return used.map(d=>'<span class="p-used-badge">уже добавлено'+(d.attributes.trigger_id?': '+d.attributes.trigger_id:'')+'</span>').join(' ');
+}
+
 
 async function loadStatus() {
   try {
@@ -398,6 +404,7 @@ function renderWiz(){
   if(wStep===1)c.innerHTML=renderStep1();
   else if(wStep===2){if(wType==='relay')c.innerHTML=renderStep2Relay();else if(wType==='scenario_button')c.innerHTML=renderStep2ScenarioButton();else if(wType==='hvac_ac')c.innerHTML=renderStep2HvacAc();else if(wType==='vacuum_cleaner')c.innerHTML=renderStep2Vacuum();else if(wType==='valve')c.innerHTML=renderStep2Valve();else if(wType==='light')c.innerHTML=renderStep2Light();else if(wType==='cover')c.innerHTML=renderStep2Cover();else if(wType==='water_leak')c.innerHTML=renderStep2WaterLeak();else if(wType==='humidifier')c.innerHTML=renderStep2Humidifier();else if(wType==='socket')c.innerHTML=renderStep2Socket();else if(wType==='smoke')c.innerHTML=renderStep2Smoke();else if(wType==='kettle')c.innerHTML=renderStep2Kettle();else if(wType==='sensor_door')c.innerHTML=renderStep2SensorDoor();else if(wType==='sensor_air')c.innerHTML=renderStep2SensorAir();else if(wType==='hvac_radiator')c.innerHTML=renderStep2Radiator();else if(wType==='hvac_fan')c.innerHTML=renderStep2Fan();else if(wType==='tv')c.innerHTML=renderStep2Tv();else if(wType==='intercom')c.innerHTML=renderStep2Intercom();else if(wType==='sensor_pir')c.innerHTML=renderStep2Pir();else if(wType==='automation_relay')c.innerHTML=renderStep2Automation();else if(wType==='script_relay')c.innerHTML=renderStep2Script();else c.innerHTML=renderStep2Sensor();}
   else c.innerHTML=renderStep3();
+  if(wStep===3)setTimeout(updateNameCount, 0);
 }
 
 function renderStep1(){
@@ -688,20 +695,22 @@ function clearSP(key){delete wData[key];delete wData[key+'_name'];delete wData[k
 // ═══════════════════════════════════════════════════════════
 function renderStep3(){
   let defName='',defRoom='';
-  if(wType==='relay'||wType==='socket'||wType==='scenario_button'||wType==='hvac_ac'||wType==='vacuum_cleaner'||wType==='valve'||wType==='light'||wType==='cover'||wType==='water_leak'||wType==='humidifier'||wType==='smoke'||wType==='kettle'||wType==='sensor_door'||wType==='hvac_radiator'||wType==='hvac_fan'||wType==='tv'){defName=wData.entity_name||'';defRoom=wData.entity_area||'';}
+  if(wType==='relay'||wType==='socket'||wType==='scenario_button'||wType==='hvac_ac'||wType==='vacuum_cleaner'||wType==='valve'||wType==='light'||wType==='cover'||wType==='water_leak'||wType==='humidifier'||wType==='smoke'||wType==='kettle'||wType==='sensor_door'||wType==='hvac_radiator'||wType==='hvac_fan'||wType==='tv'||wType==='intercom'||wType==='sensor_pir'||wType==='automation_relay'||wType==='script_relay'){defName=wData.entity_name||'';defRoom=wData.entity_area||'';}
   else{defName=wData.temperature_entity_name||wData.humidity_entity_name||'';defRoom=wData.temperature_entity_area||wData.humidity_entity_area||'';}
   return `<div class="fg"><label>Имя <span style="color:var(--danger)">*</span></label>
-    <input type="text" id="dName" value="${esc(wData.name||defName)}" oninput="autoId()" placeholder="Свет в гостиной"/>
-    <div style="font-size:11px;color:var(--text-muted,#888);margin-top:4px">Только русские буквы, цифры и пробелы · от 3 до 33 символов</div></div>
+    <input type="text" id="dName" value="${esc(wData.name||defName)}" oninput="autoId();updateNameCount()" placeholder="Свет в гостиной"/>
+    <div style="font-size:11px;color:var(--text-muted,#888);margin-top:4px">Только русские буквы, цифры и пробелы · от 3 до 33 символов · <span id="nameCount">0/33</span></div></div>
     <div class="fg"><label>ID <span style="color:var(--danger)">*</span></label>
     <input type="text" id="dId" value="${esc(wData.id||slugify(wData.name||defName))}" placeholder="relay_living_room"/>
     <div class="hint">Только a–z, 0–9, _ . Уникальный идентификатор в Сбере.</div></div>
     <div class="fg"><label>Комната</label>
     <input type="text" id="dRoom" value="${esc(wData.room!==undefined?wData.room:defRoom)}" placeholder="Гостиная"/>
     <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${[...new Set(devices.map(d=>d.room).filter(Boolean))].sort().map(r=>`<span class="room-chip" onclick="document.getElementById('dRoom').value='${esc(r)}'" style="cursor:pointer;background:var(--primary-lt);color:var(--primary-dk);padding:2px 8px;border-radius:12px;font-size:11px;white-space:nowrap">${esc(r)}</span>`).join('')}</div></div>
-    ${wType==='automation_relay'?`<div class="fg"><label>ID триггера (опционально)</label><input type="text" value="${esc(wData.trigger_id||'')}" oninput="wData.trigger_id=this.value" placeholder="manual_trigger_id"/><div class="hint">Для автоматизаций с несколькими триггерами</div></div>`:''}`;
+    ${(wType==='automation_relay'||(wType==='relay'&&wData.entity_id&&wData.entity_id.startsWith('automation.')))?`<div class="fg"><label>ID триггера (опционально)</label><input type="text" value="${esc(wData.trigger_id||'')}" oninput="wData.trigger_id=this.value" placeholder="manual_trigger_id"/><div class="hint">Для автоматизаций с несколькими триггерами</div></div>`:''}`;
 }
 function autoId(){if(wData._edit)return;const n=document.getElementById('dName')?.value||'';const f=document.getElementById('dId');if(f&&(!wData.id||f.value===slugify(wData.name||'')))f.value=slugify(n);}
+
+function updateNameCount(){const i=document.getElementById('dName');const c=document.getElementById('nameCount');if(i&&c){const len=(i.value||'').length;c.textContent=len+'/33';c.style.color=len>33?'var(--danger)':'';}}
 
 async function submitDevice(){
   const attrs={};
@@ -1852,12 +1861,12 @@ function pickPirEntity(eid,name,area){
 function renderStep2Automation(){
   const automations=haRelay.filter(e=>e.domain==='automation');
   if(!automations.length)return'<div class="p-empty">Нет automation сущностей</div>';
-  return '<div class="fg" style="margin-bottom:10px"><label>Выберите автоматизацию:</label></div><div class="picker"><div class="psearch"><span style="color:var(--muted)">🔍</span><input type="text" placeholder="Поиск…" value="'+esc(sFilter)+'" oninput="sFilter=this.value;document.getElementById(\'autolist\').innerHTML=autoItems()"/></div><div class="plist" id="autolist">'+autoItems()+'</div></div>';
+  return '<div class="fg" style="margin-bottom:10px"><label>Выберите автоматизацию:</label></div><div class="picker"><div class="psearch"><span style="color:var(--muted)">🔍</span><input type="text" placeholder="Поиск…" value="'+esc(sFilter)+'" oninput="sFilter=this.value;document.getElementById(\'autolist\').innerHTML=autoItems()"/></div><div class="p-head" style="grid-template-columns:250px minmax(100px,150px) 1fr"><div>Имя</div><div>Добавлено</div><div>Entity ID</div></div><div class="plist" id="autolist">'+autoItems()+'</div></div>';
 }
 function autoItems(){
   var q=(sFilter||'').toLowerCase();
   var list=haRelay.filter(function(e){return e.domain==='automation'&&(e.friendly_name||'').toLowerCase().indexOf(q)>=0;});
-  return list.map(function(e){return'<div class="p-item '+(wData.entity_id===e.entity_id?'sel':'')+'" onclick="pickAutoEntity(\''+esc(e.entity_id)+'\',\''+esc(e.friendly_name)+'\',\''+esc(e.area||'')+'\')"><span class="p-name">'+esc(e.friendly_name)+'</span><span class="p-eid">'+esc(e.entity_id)+'</span></div>';}).join('');
+  return list.map(function(e){return'<div class="p-item '+(wData.entity_id===e.entity_id?'sel':'')+' '+usedCls(e.entity_id)+'" onclick="pickAutoEntity(\''+esc(e.entity_id)+'\',\''+esc(e.friendly_name)+'\',\''+esc(e.area||'')+'\')" style="grid-template-columns:250px minmax(100px,150px) 1fr"><span class="p-name">'+esc(e.friendly_name)+'</span><span style="display:flex;flex-direction:column;gap:2px;align-items:flex-start">'+autoBadge(e.entity_id)+'</span><span class="p-eid" title="'+esc(e.entity_id)+'">'+esc(e.entity_id)+'</span></div>';}).join('');
 }
 function pickAutoEntity(eid,name,area){
   wData.entity_id=eid;wData.entity_name=name;wData.entity_area=area;
@@ -1877,7 +1886,7 @@ function renderStep2Script(){
 function scriptItems(){
   var q=(sFilter||'').toLowerCase();
   var list=haRelay.filter(function(e){return e.domain==='script'&&(e.friendly_name||'').toLowerCase().indexOf(q)>=0;});
-  return list.map(function(e){return'<div class="p-item '+(wData.entity_id===e.entity_id?'sel':'')+'" onclick="pickScriptEntity(\''+esc(e.entity_id)+'\',\''+esc(e.friendly_name)+'\',\''+esc(e.area||'')+'\')"><span class="p-name">'+esc(e.friendly_name)+'</span><span class="p-eid">'+esc(e.entity_id)+'</span></div>';}).join('');
+  return list.map(function(e){return'<div class="p-item '+(wData.entity_id===e.entity_id?'sel':'')+' '+usedCls(e.entity_id)+'" onclick="pickScriptEntity(\''+esc(e.entity_id)+'\',\''+esc(e.friendly_name)+'\',\''+esc(e.area||'')+'\')"><span class="p-name">'+esc(e.friendly_name)+usedBadge(e.entity_id)+'</span><span class="p-eid">'+esc(e.entity_id)+'</span></div>';}).join('');
 }
 function pickScriptEntity(eid,name,area){
   wData.entity_id=eid;wData.entity_name=name;wData.entity_area=area;
