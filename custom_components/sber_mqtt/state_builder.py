@@ -35,6 +35,7 @@ from .const import (
     DEVICE_TYPE_TV,
     DEVICE_TYPE_INTERCOM,
     DEVICE_TYPE_SENSOR_PIR,
+    DEVICE_TYPE_EVENT_BUTTON,
 )
 
 if TYPE_CHECKING:
@@ -409,6 +410,10 @@ def build_current_state_payload(
             ps.state == "on",
             _sensor_float(hass, attrs.get("battery_entity")),
         )
+
+    # ── Кнопка событий ─────────────────────────────────────────────────
+    if device_type == DEVICE_TYPE_EVENT_BUTTON:
+        return serializer.build_scenario_button_online_payload(device_id)
 
     # ── Чайник ───────────────────────────────────────────────────────────
     if device_type == DEVICE_TYPE_KETTLE:
