@@ -499,3 +499,21 @@ class SberHAAutomationTriggersView(HomeAssistantView):
                 # Отдаём automation id для запроса конфига через REST API
                 auto_id = state.attributes.get("id", "")
                 return web.json_response({"trigger_ids": [], "automation_id": auto_id})
+
+
+# ── GET /api/sber_mqtt/ha_entities/event_buttons ───────────────────────
+
+class SberHAEventButtonsView(HomeAssistantView):
+    """Список sensor и binary_sensor для кнопок событий."""
+
+    url  = "/api/sber_mqtt/ha_entities/event_buttons"
+    name = "api:sber_mqtt:ha_event_buttons"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        pass
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entities = get_ha_entities(hass, ["sensor", "binary_sensor", "event"])
+        return web.json_response({"entities": entities})

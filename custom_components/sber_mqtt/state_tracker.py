@@ -471,6 +471,7 @@ class StateTracker:
         event_type = event.event_type
         event_data = event.data or {}
         action = event_data.get("action", "")
+        _LOGGER.warning("EventButton: received %s action=%s", event_type, action)
 
         devices = self._get_devices()
         for device_id, device in devices.items():
