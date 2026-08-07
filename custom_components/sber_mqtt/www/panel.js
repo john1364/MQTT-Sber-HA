@@ -706,11 +706,11 @@ function renderStep3(){
     <input type="text" id="dId" value="${esc(wData.id||slugify(wData.name||defName))}" placeholder="relay_living_room"/>
     <div class="hint">Только a–z, 0–9, _ . Уникальный идентификатор в Сбере.</div></div>
     <div class="fg"><label>Комната</label>
-    <input type="text" id="dRoom" value="${esc(wData.room!==undefined?wData.room:defRoom)}" placeholder="Гостиная"/>
-    <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${[...new Set(devices.map(d=>d.room).filter(Boolean))].sort().map(r=>`<span class="room-chip" onclick="document.getElementById('dRoom').value='${esc(r)}'" style="cursor:pointer;background:var(--primary-lt);color:var(--primary-dk);padding:2px 8px;border-radius:12px;font-size:11px;white-space:nowrap">${esc(r)}</span>`).join('')}</div></div>
-    ${(wType==='automation_relay'||(wType==='relay'&&wData.entity_id&&wData.entity_id.startsWith('automation.')))?`<div class="fg"><label>ID триггера (опционально)</label><input type="text" id="triggerIdInput" value="${esc(wData.trigger_id||'')}" oninput="wData.trigger_id=this.value" placeholder="manual_trigger_id"/><div class="hint">Для автоматизаций с несколькими триггерами</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px" id="triggerChips"></div></div>`:''}`;
+    <input type="text" id="dRoom" value="${esc(wData.room!==undefined?wData.room:defRoom)}" placeholder="Гостиная" oninput="autoId()"/>
+    <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${[...new Set(devices.map(d=>d.room).filter(Boolean))].sort().map(r=>`<span class="room-chip" onclick="document.getElementById('dRoom').value='${esc(r)}';autoId()" style="cursor:pointer;background:var(--primary-lt);color:var(--primary-dk);padding:2px 8px;border-radius:12px;font-size:11px;white-space:nowrap">${esc(r)}</span>`).join('')}</div></div>
+    ${(wType==='automation_relay'||(wType==='relay'&&wData.entity_id&&wData.entity_id.startsWith('automation.')))?`<div class="fg"><label>ID триггера (опционально)</label><input type="text" id="triggerIdInput" value="${esc(wData.trigger_id||'')}" oninput="wData.trigger_id=this.value;autoId()" placeholder="manual_trigger_id"/><div class="hint">Для автоматизаций с несколькими триггерами</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px" id="triggerChips"></div></div>`:''}`;
 }
-function autoId(){if(wData._edit)return;const n=document.getElementById('dName')?.value||'';const f=document.getElementById('dId');if(f&&(!wData.id||f.value===slugify(wData.name||'')))f.value=slugify(n);}
+function autoId(){if(wData._edit)return;const n=document.getElementById('dName')?.value||'';const f=document.getElementById('dId');const r=document.getElementById('dRoom')?.value||'';if(f&&(!wData.id||f.value===slugify(wData.name||''))){var id=slugify(n);if(r)id+='_'+slugify(r);if(wType==='automation_relay'&&wData.trigger_id)id+='_'+slugify(wData.trigger_id);f.value=id;}}
 
 async function loadTriggerChips(){
   const c=document.getElementById('triggerChips');if(!c)return;
@@ -725,7 +725,7 @@ async function loadTriggerChips(){
         const bg=used?'var(--primary-lt)':'var(--bg)';
         const clr=used?'var(--primary-dk)':'var(--muted)';
         const brd=used?'':'border:1px solid var(--border)';
-        return'<span class="room-chip" onclick="var inp=document.getElementById(\'triggerIdInput\');if(inp){inp.value=\''+esc(t)+'\';wData.trigger_id=\''+esc(t)+'\'}" style="cursor:pointer;background:'+bg+';color:'+clr+';padding:2px 8px;border-radius:12px;font-size:11px;white-space:nowrap;'+brd+'">'+esc(t)+'</span>';
+        return'<span class="room-chip" onclick="var inp=document.getElementById(\'triggerIdInput\');if(inp){inp.value=\''+esc(t)+'\';wData.trigger_id=\''+esc(t)+'\';autoId();}" style="cursor:pointer;background:'+bg+';color:'+clr+';padding:2px 8px;border-radius:12px;font-size:11px;white-space:nowrap;'+brd+'">'+esc(t)+'</span>';
       }).join('');
     }
   }catch(e){}}function updateNameCount(){const i=document.getElementById('dName');const c=document.getElementById('nameCount');if(i&&c){const len=(i.value||'').length;c.textContent=len+'/33';c.style.color=len>33?'var(--danger)':'';}}
