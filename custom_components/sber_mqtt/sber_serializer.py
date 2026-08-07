@@ -79,6 +79,7 @@ from .const import (
     DEVICE_TYPE_TV,
     DEVICE_TYPE_INTERCOM,
     DEVICE_TYPE_SENSOR_PIR,
+    DEVICE_TYPE_EVENT_BUTTON,
     HA_HVAC_MODE_TO_SBER,
     HA_MODE_TO_SBER_AIR_FLOW,
     SIGNAL_STRENGTH_LOW_THRESHOLD,
@@ -177,6 +178,8 @@ class SberSerializer:
             return self._intercom_config(device_id, device)
         if device_type == DEVICE_TYPE_SENSOR_PIR:
             return self._sensor_pir_config(device_id, device)
+        if device_type == DEVICE_TYPE_EVENT_BUTTON:
+            return self._event_button_config(device_id, device)
         _LOGGER.warning("Неизвестный тип устройства: %s", device_type)
         return None
 
@@ -661,6 +664,26 @@ class SberSerializer:
                 "model": "Model_sensor_pir",
                 "category": "sensor_pir",
                 "features": features,
+            },
+            "model_id": "",
+        }
+        if device.get("room"):
+            entry["room"] = device["room"]
+        return entry
+
+    def _event_button_config(self, device_id: str, device: dict) -> dict:
+        """Конфиг для кнопки событий — как сценарная кнопка в Сбере."""
+        entry = {
+            "id": device_id,
+            "name": device.get("name", device_id),
+            "hw_version": HW_VERSION,
+            "sw_version": SW_VERSION,
+            "model": {
+                "id": "ID_event_button",
+                "manufacturer": MANUFACTURER,
+                "model": "Model_event_button",
+                "category": "scenario_button",
+                "features": ["online", "button_event"],
             },
             "model_id": "",
         }

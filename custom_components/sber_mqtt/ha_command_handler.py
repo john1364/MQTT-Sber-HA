@@ -73,7 +73,7 @@ class HACommandHandler:
             _LOGGER.debug("Команда для датчика %s проигнорирована", device.get("id"))
 
         # ── Сценарные кнопки — только отправляют события в Сбер ─────────
-        elif device_type == "scenario_button":
+        elif device_type == "scenario_button" or device_type == "event_button":
             _LOGGER.debug("Команда для сценарной кнопки %s проигнорирована", device.get("id"))
 
         else:
