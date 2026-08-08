@@ -845,7 +845,7 @@ async function submitDevice(){
 }
 
 async function fetchRelay(){if(haRelay.length)return;try{haRelay=(await api('/api/sber_mqtt/ha_entities/relay')).entities||[];}catch(e){toast('Ошибка загрузки сущностей','err');}}
-async function fetchSensors(){if(haSensors.length)return;try{haSensors=(await api('/api/sber_mqtt/ha_entities/sensors?classes=temperature,humidity,moisture,battery,signal_strength,power,current,voltage')).entities||[];}catch(e){toast('Ошибка загрузки сенсоров','err');}}
+async function fetchSensors(){if(haSensors.length)return;try{haSensors=(await api('/api/sber_mqtt/ha_entities/sensors?classes=temperature,humidity,moisture,battery,signal_strength,power,current,voltage,carbon_dioxide,pm25,volatile_organic_compounds')).entities||[];}catch(e){toast('Ошибка загрузки сенсоров','err');}}
 
 let haClimate=[];
 
@@ -1697,7 +1697,7 @@ function pickDoorEntity(eid,name,area){
 // ═══════════════════════════════════════════════════════════
 
 function renderStep2SensorAir(){
-  if(!haSensors.length)return renderLoading();
+  if(!haSensors.length)return'<div class="p-empty">Сенсоры не загружены. Перезагрузите HA и страницу.</div>';
   const slots=[{k:'temperature_entity',l:'🌡️ Температура',c:'temperature'},
               {k:'humidity_entity',l:'💧 Влажность',c:'humidity'},
               {k:'co2_entity',l:'🫧 CO₂',c:'carbon_dioxide'},
