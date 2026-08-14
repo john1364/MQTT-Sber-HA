@@ -80,8 +80,13 @@ class SberHAEntitiesClimateView(HomeAssistantView):
     async def get(self, request: web.Request) -> web.Response:
         hass: HomeAssistant = request.app["hass"]
         entities = get_ha_entities(hass, "climate", extra_fields={
-            "fan_modes":    lambda s, e: s.attributes.get("fan_modes",    []) if s else [],
-            "preset_modes": lambda s, e: s.attributes.get("preset_modes", []) if s else [],
+            "hvac_modes":     lambda s, e: s.attributes.get("hvac_modes",     []) if s else [],
+            "fan_modes":      lambda s, e: s.attributes.get("fan_modes",      []) if s else [],
+            "preset_modes":   lambda s, e: s.attributes.get("preset_modes",   []) if s else [],
+            "swing_modes":    lambda s, e: s.attributes.get("swing_modes",    []) if s else [],
+            "min_temp":       lambda s, e: s.attributes.get("min_temp")         if s else None,
+            "max_temp":       lambda s, e: s.attributes.get("max_temp")         if s else None,
+            "target_temp_step": lambda s, e: s.attributes.get("target_temp_step") if s else None,
         })
         return web.json_response({"entities": entities})
 
