@@ -743,6 +743,13 @@ async function submitDevice(){
   else if(wType==='hvac_ac'){
     attrs.entity_id=wData.entity_id;attrs.entity_name=wData.entity_name||'';
     if(wData.temperature_entity)attrs.temperature_entity=wData.temperature_entity;
+    if(wData.hvac_modes)attrs.hvac_modes=wData.hvac_modes;
+    if(wData.fan_modes)attrs.fan_modes=wData.fan_modes;
+    if(wData.preset_modes)attrs.preset_modes=wData.preset_modes;
+    if(wData.swing_modes)attrs.swing_modes=wData.swing_modes;
+    if(wData.min_temp!==undefined)attrs.min_temp=wData.min_temp;
+    if(wData.max_temp!==undefined)attrs.max_temp=wData.max_temp;
+    if(wData.target_temp_step!==undefined)attrs.target_temp_step=wData.target_temp_step;
   }
   else if(wType==='vacuum_cleaner'){
     attrs.entity_id=wData.entity_id;attrs.entity_name=wData.entity_name||'';
@@ -897,7 +904,20 @@ function hvacItems(){
     <span class="dom-badge">climate</span><span class="p-area">${esc(e.area||'—')}</span>
     <span class="p-name">${esc(e.friendly_name)}${usedBadge(e.entity_id)}</span><span class="p-eid">${esc(e.entity_id)}</span></div>`).join('');
 }
-function pickHvacEntity(eid,name,area){wData.entity_id=eid;wData.entity_name=name;wData.entity_area=area;document.getElementById('wizContent').innerHTML=renderStep2HvacAc();}
+function pickHvacEntity(eid,name,area){
+  wData.entity_id=eid;wData.entity_name=name;wData.entity_area=area;
+  var ce=haClimate.find(function(x){return x.entity_id===eid;});
+  if(ce){
+    wData.hvac_modes=ce.hvac_modes||[];
+    wData.fan_modes=ce.fan_modes||[];
+    wData.preset_modes=ce.preset_modes||[];
+    wData.swing_modes=ce.swing_modes||[];
+    wData.min_temp=ce.min_temp;
+    wData.max_temp=ce.max_temp;
+    wData.target_temp_step=ce.target_temp_step;
+  }
+  document.getElementById('wizContent').innerHTML=renderStep2HvacAc();
+}
 function openHvacTempPicker(){const el=document.getElementById('hvacTempPicker');el.style.display='';document.getElementById('hvacTempInput').value='';renderHvacTempList('');el.scrollIntoView({behavior:'smooth'});}
 function renderHvacTempList(q){
   q=(q||'').toLowerCase();
