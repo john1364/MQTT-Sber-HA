@@ -584,6 +584,20 @@ input:focus, select:focus {
 .toast.ok   { background: var(--primary); }
 .toast.err  { background: var(--danger); }
 
+.btn-gear {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 4px;
+  border-radius: 6px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+}
+.btn-gear:hover { background: var(--bg); color: var(--primary); }
+
 /* Floating Action Button */
 .fab {
   position: fixed;

@@ -81,6 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # 3. HA command handler
     command_handler = HACommandHandler(hass)
+    command_handler.set_user_id(config.get("user_id"))
 
     # 4. MQTT client — all callbacks are closures over hass/registry/serializer
     #    No circular references, no access to private attributes
@@ -197,6 +198,7 @@ def _register_http_views(hass: HomeAssistant) -> None:
         SberPublishStatusView,
         SberPanelView,
         SberDeviceTypesView,
+        SberSettingsView,
         SberConnectionStatusView,
         # Dev Tools
         SberDevConfigRawView,
@@ -245,6 +247,7 @@ def _register_http_views(hass: HomeAssistant) -> None:
     hass.http.register_view(SberPublishStatusView(hass))
     hass.http.register_view(SberPanelView(hass))
     hass.http.register_view(SberDeviceTypesView(hass))
+    hass.http.register_view(SberSettingsView(hass))
     hass.http.register_view(SberConnectionStatusView(hass))
     # Dev Tools
     hass.http.register_view(SberDevConfigRawView(hass))
