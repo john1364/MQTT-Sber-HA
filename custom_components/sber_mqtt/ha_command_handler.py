@@ -28,6 +28,26 @@ class HACommandHandler:
 
     def __init__(self, hass: HomeAssistant) -> None:
         self._hass = hass
+        self._user_id: str | None = None
+
+    def set_user_id(self, user_id: str | None) -> None:
+        """Устанавливает пользователя HA, от имени которого выполняются команды."""
+        self._user_id = user_id or None
+
+    def _context(self) -> Any:
+        """Возвращает Context с user_id, если задан."""
+        from homeassistant.core import Context
+        if self._user_id:
+            return Context(user_id=self._user_id)
+        return Context()
+
+    async def _async_call(self, domain: str, service: str, service_data: dict, blocking: bool = False) -> None:
+        """Вызывает сервис HA с контекстом пользователя Сбера."""
+        await self._hass.services.async_call(
+            domain, service, service_data,
+            context=self._context(),
+            blocking=blocking,
+        )
 
     async def async_handle_command(self, device: dict, states: list) -> None:
         """Обрабатывает список команд для устройства.
@@ -133,7 +153,7 @@ class HACommandHandler:
             # Сценарий запускается независимо от значения on_off
             script_name = entity_id.split(".", 1)[1]  # "script.my_scene" → "my_scene"
             self._track_ha_command(device, states, "script", script_name, {})
-            await self._hass.services.async_call(
+            await self._async_call(
                 "script", script_name, {}, blocking=False
             )
 
@@ -144,7 +164,7 @@ class HACommandHandler:
                 if trigger_id:
                     data["variables"] = {"manual_trigger_id": trigger_id}
                 self._track_ha_command(device, states, "automation", "trigger", data)
-                await self._hass.services.async_call(
+                await self._async_call(
                     "automation", "trigger", data, blocking=False
                 )
             # else: на выключение ничего не делаем
@@ -152,7 +172,7 @@ class HACommandHandler:
         elif domain in ("button", "input_button"):
             # Кнопки нажимаются независимо от значения on_off
             self._track_ha_command(device, states, domain, "press", {"entity_id": entity_id})
-            await self._hass.services.async_call(
+            await self._async_call(
                 domain, "press", {"entity_id": entity_id}, blocking=False
             )
 
@@ -160,7 +180,7 @@ class HACommandHandler:
             # Переключаемые сущности: turn_on или turn_off
             service = "turn_on" if on_off_value else "turn_off"
             self._track_ha_command(device, states, "homeassistant", service, {"entity_id": entity_id})
-            await self._hass.services.async_call(
+            await self._async_call(
                 "homeassistant", service, {"entity_id": entity_id}, blocking=False
             )
 
@@ -168,7 +188,7 @@ class HACommandHandler:
             # Медиаплеер: turn_on / turn_off через домен media_player
             service = "turn_on" if on_off_value else "turn_off"
             self._track_ha_command(device, states, "media_player", service, {"entity_id": entity_id})
-            await self._hass.services.async_call(
+            await self._async_call(
                 "media_player", service, {"entity_id": entity_id}, blocking=False
             )
 
@@ -208,7 +228,7 @@ class HACommandHandler:
                 service = "turn_on" if is_on else "turn_off"
                 _LOGGER.info("HVAC %s: on_off=%s → climate.%s", device.get("id"), is_on, service)
                 self._track_ha_command(device, states, "climate", service, {"entity_id": entity_id})
-                await self._hass.services.async_call(
+                await self._async_call(
                     "climate", service, {"entity_id": entity_id}, blocking=False
                 )
 
@@ -219,7 +239,7 @@ class HACommandHandler:
                     _LOGGER.info("HVAC %s: set_temperature=%.1f", device.get("id"), temp_f)
                     self._track_ha_command(device, states, "climate", "set_temperature",
                                            {"entity_id": entity_id, "temperature": temp_f})
-                    await self._hass.services.async_call(
+                    await self._async_call(
                         "climate", "set_temperature",
                         {"entity_id": entity_id, "temperature": temp_f},
                         blocking=False,
@@ -234,7 +254,7 @@ class HACommandHandler:
                     _LOGGER.info("HVAC %s: set_hvac_mode=%s (sber=%s)", device.get("id"), ha_mode, sber_mode)
                     self._track_ha_command(device, states, "climate", "set_hvac_mode",
                                            {"entity_id": entity_id, "hvac_mode": ha_mode})
-                    await self._hass.services.async_call(
+                    await self._async_call(
                         "climate", "set_hvac_mode",
                         {"entity_id": entity_id, "hvac_mode": ha_mode},
                         blocking=False,
@@ -261,7 +281,7 @@ class HACommandHandler:
                     )
                     self._track_ha_command(device, states, "climate", "set_preset_mode",
                                            {"entity_id": entity_id, "preset_mode": preset_mode})
-                    await self._hass.services.async_call(
+                    await self._async_call(
                         "climate", "set_preset_mode",
                         {"entity_id": entity_id, "preset_mode": preset_mode},
                         blocking=False,
@@ -274,7 +294,7 @@ class HACommandHandler:
                     )
                     self._track_ha_command(device, states, "climate", "set_fan_mode",
                                            {"entity_id": entity_id, "fan_mode": fan_mode})
-                    await self._hass.services.async_call(
+                    await self._async_call(
                         "climate", "set_fan_mode",
                         {"entity_id": entity_id, "fan_mode": fan_mode},
                         blocking=False,
@@ -282,7 +302,7 @@ class HACommandHandler:
                     # Сбрасываем preset в none чтобы не осталось boost/sleep
                     self._track_ha_command(device, states, "climate", "set_preset_mode",
                                            {"entity_id": entity_id, "preset_mode": "none"})
-                    await self._hass.services.async_call(
+                    await self._async_call(
                         "climate", "set_preset_mode",
                         {"entity_id": entity_id, "preset_mode": "none"},
                         blocking=False,
@@ -299,7 +319,7 @@ class HACommandHandler:
                     )
                     self._track_ha_command(device, states, "climate", "set_swing_mode",
                                            {"entity_id": entity_id, "swing_mode": ha_swing})
-                    await self._hass.services.async_call(
+                    await self._async_call(
                         "climate", "set_swing_mode",
                         {"entity_id": entity_id, "swing_mode": ha_swing},
                         blocking=False,
@@ -328,7 +348,7 @@ class HACommandHandler:
                 service = "turn_on" if is_on else "turn_off"
                 _LOGGER.info("Radiator %s: on_off=%s → climate.%s", device.get("id"), is_on, service)
                 self._track_ha_command(device, states, "climate", service, {"entity_id": entity_id})
-                await self._hass.services.async_call(
+                await self._async_call(
                     "climate", service, {"entity_id": entity_id}, blocking=False
                 )
 
@@ -339,7 +359,7 @@ class HACommandHandler:
                     _LOGGER.info("Radiator %s: set_temperature=%.1f", device.get("id"), temp_f)
                     self._track_ha_command(device, states, "climate", "set_temperature",
                                            {"entity_id": entity_id, "temperature": temp_f})
-                    await self._hass.services.async_call(
+                    await self._async_call(
                         "climate", "set_temperature",
                         {"entity_id": entity_id, "temperature": temp_f},
                         blocking=False,
@@ -374,7 +394,7 @@ class HACommandHandler:
                     svc_domain, service = "fan", ("turn_on" if is_on else "turn_off")
                 _LOGGER.info("Fan %s: on_off=%s → %s.%s", device.get("id"), is_on, svc_domain, service)
                 self._track_ha_command(device, states, svc_domain, service, {"entity_id": entity_id})
-                await self._hass.services.async_call(
+                await self._async_call(
                     svc_domain, service, {"entity_id": entity_id}, blocking=False
                 )
 
@@ -386,7 +406,7 @@ class HACommandHandler:
                     _LOGGER.info("Fan %s(climate): hvac_air_flow_power=%s → set_fan_mode", device.get("id"), sber_flow)
                     self._track_ha_command(device, states, "climate", "set_fan_mode",
                                            {"entity_id": entity_id, "fan_mode": fan_mode})
-                    await self._hass.services.async_call(
+                    await self._async_call(
                         "climate", "set_fan_mode",
                         {"entity_id": entity_id, "fan_mode": fan_mode},
                         blocking=False,
@@ -397,7 +417,7 @@ class HACommandHandler:
                         _LOGGER.info("Fan %s: hvac_air_flow_power=%s → set_percentage=%d", device.get("id"), sber_flow, pct)
                         self._track_ha_command(device, states, "fan", "set_percentage",
                                                {"entity_id": entity_id, "percentage": pct})
-                        await self._hass.services.async_call(
+                        await self._async_call(
                             "fan", "set_percentage",
                             {"entity_id": entity_id, "percentage": pct},
                             blocking=False,
@@ -420,11 +440,11 @@ class HACommandHandler:
                     if domain == "lock":
                         svc = "open"
                         self._track_ha_command(device, states, "lock", svc, {"entity_id": entity_id})
-                        await self._hass.services.async_call("lock", svc, {"entity_id": entity_id}, blocking=False)
+                        await self._async_call("lock", svc, {"entity_id": entity_id}, blocking=False)
                     else:
                         svc = "turn_on"
                         self._track_ha_command(device, states, "homeassistant", svc, {"entity_id": entity_id})
-                        await self._hass.services.async_call("homeassistant", svc, {"entity_id": entity_id}, blocking=False)
+                        await self._async_call("homeassistant", svc, {"entity_id": entity_id}, blocking=False)
 
     async def _handle_tv_command(self, device: dict, states: list) -> None:
         """Обрабатывает команды управления телевизором от Сбера."""
@@ -442,7 +462,7 @@ class HACommandHandler:
                 is_on = _parse_bool(val_obj)
                 service = "turn_on" if is_on else "turn_off"
                 self._track_ha_command(device, states, domain, service, {"entity_id": entity_id})
-                await self._hass.services.async_call(
+                await self._async_call(
                     domain, service, {"entity_id": entity_id}, blocking=False
                 )
 
@@ -450,10 +470,10 @@ class HACommandHandler:
                 direction = val_obj.get("enum_value", "")
                 if direction == "up":
                     self._track_ha_command(device, states, domain, "volume_up", {"entity_id": entity_id})
-                    await self._hass.services.async_call(domain, "volume_up", {"entity_id": entity_id}, blocking=False)
+                    await self._async_call(domain, "volume_up", {"entity_id": entity_id}, blocking=False)
                 elif direction == "down":
                     self._track_ha_command(device, states, domain, "volume_down", {"entity_id": entity_id})
-                    await self._hass.services.async_call(domain, "volume_down", {"entity_id": entity_id}, blocking=False)
+                    await self._async_call(domain, "volume_down", {"entity_id": entity_id}, blocking=False)
 
             elif key == "volume_int":
                 vol = _parse_integer(val_obj)
@@ -461,7 +481,7 @@ class HACommandHandler:
                     level = max(0.0, min(1.0, float(vol) / 100.0))
                     self._track_ha_command(device, states, domain, "volume_set",
                                            {"entity_id": entity_id, "volume_level": level})
-                    await self._hass.services.async_call(
+                    await self._async_call(
                         domain, "volume_set", {"entity_id": entity_id, "volume_level": level}, blocking=False
                     )
                 except (ValueError, TypeError):
@@ -471,7 +491,7 @@ class HACommandHandler:
                 mute = _parse_bool(val_obj)
                 self._track_ha_command(device, states, domain, "volume_mute",
                                        {"entity_id": entity_id, "is_volume_muted": mute})
-                await self._hass.services.async_call(
+                await self._async_call(
                     domain, "volume_mute", {"entity_id": entity_id, "is_volume_muted": mute}, blocking=False
                 )
 
@@ -479,17 +499,17 @@ class HACommandHandler:
                 direction = val_obj.get("enum_value", "")
                 if direction == "next":
                     self._track_ha_command(device, states, domain, "media_next_track", {"entity_id": entity_id})
-                    await self._hass.services.async_call(domain, "media_next_track", {"entity_id": entity_id}, blocking=False)
+                    await self._async_call(domain, "media_next_track", {"entity_id": entity_id}, blocking=False)
                 elif direction == "prev":
                     self._track_ha_command(device, states, domain, "media_previous_track", {"entity_id": entity_id})
-                    await self._hass.services.async_call(domain, "media_previous_track", {"entity_id": entity_id}, blocking=False)
+                    await self._async_call(domain, "media_previous_track", {"entity_id": entity_id}, blocking=False)
 
             elif key == "source":
                 src = val_obj.get("enum_value", "")
                 if src:
                     self._track_ha_command(device, states, domain, "select_source",
                                            {"entity_id": entity_id, "source": src})
-                    await self._hass.services.async_call(
+                    await self._async_call(
                         domain, "select_source", {"entity_id": entity_id, "source": src}, blocking=False
                     )
 
@@ -536,7 +556,7 @@ class HACommandHandler:
                     device.get("id"), sber_cmd, domain, service,
                 )
                 self._track_ha_command(device, states, domain, service, {"entity_id": entity_id})
-                await self._hass.services.async_call(
+                await self._async_call(
                     domain, service, {"entity_id": entity_id}, blocking=False
                 )
             else:
@@ -581,7 +601,7 @@ class HACommandHandler:
                     device.get("id"), sber_cmd, d, service,
                 )
                 self._track_ha_command(device, states, d, service, {"entity_id": entity_id})
-                await self._hass.services.async_call(
+                await self._async_call(
                     d, service, {"entity_id": entity_id}, blocking=False
                 )
             else:
@@ -747,7 +767,7 @@ class HACommandHandler:
             device.get("id"), "light", service, service_data,
         )
         self._track_ha_command(device, states, "light", service, service_data)
-        await self._hass.services.async_call(
+        await self._async_call(
             "light", service, service_data, blocking=False
         )
 
@@ -784,7 +804,7 @@ class HACommandHandler:
                         device.get("id"), sber_cmd, domain, service,
                     )
                     self._track_ha_command(device, states, domain, service, {"entity_id": entity_id})
-                    await self._hass.services.async_call(
+                    await self._async_call(
                         domain, service, {"entity_id": entity_id}, blocking=False
                     )
                 else:
@@ -800,7 +820,7 @@ class HACommandHandler:
                     )
                     self._track_ha_command(device, states, "cover", "set_cover_position",
                                            {"entity_id": entity_id, "position": pct})
-                    await self._hass.services.async_call(
+                    await self._async_call(
                         "cover", "set_cover_position",
                         {"entity_id": entity_id, "position": pct},
                         blocking=False,
@@ -834,7 +854,7 @@ class HACommandHandler:
                 service = "turn_on" if is_on else "turn_off"
                 _LOGGER.info("Humidifier %s: on_off=%s → humidifier.%s", device.get("id"), is_on, service)
                 self._track_ha_command(device, states, "humidifier", service, {"entity_id": entity_id})
-                await self._hass.services.async_call(
+                await self._async_call(
                     "humidifier", service, {"entity_id": entity_id}, blocking=False
                 )
 
@@ -845,7 +865,7 @@ class HACommandHandler:
                     _LOGGER.info("Humidifier %s: set_humidity=%d", device.get("id"), h)
                     self._track_ha_command(device, states, "humidifier", "set_humidity",
                                            {"entity_id": entity_id, "humidity": h})
-                    await self._hass.services.async_call(
+                    await self._async_call(
                         "humidifier", "set_humidity",
                         {"entity_id": entity_id, "humidity": h},
                         blocking=False,
@@ -860,7 +880,7 @@ class HACommandHandler:
                     _LOGGER.info("Humidifier %s: set_mode=%s (sber=%s)", device.get("id"), ha_mode, sber_mode)
                     self._track_ha_command(device, states, "humidifier", "set_mode",
                                            {"entity_id": entity_id, "mode": ha_mode})
-                    await self._hass.services.async_call(
+                    await self._async_call(
                         "humidifier", "set_mode",
                         {"entity_id": entity_id, "mode": ha_mode},
                         blocking=False,
@@ -913,7 +933,7 @@ class HACommandHandler:
                 )
                 self._track_ha_command(device, states, "water_heater", "set_operation_mode",
                                        {"entity_id": entity_id, "operation_mode": "electric"})
-                await self._hass.services.async_call(
+                await self._async_call(
                     domain = "water_heater",
                     service = "set_operation_mode",
                     service_data = {"entity_id": entity_id, "operation_mode": "electric"},
@@ -921,7 +941,7 @@ class HACommandHandler:
                 )
                 self._track_ha_command(device, states, "water_heater", "set_temperature",
                                        {"entity_id": entity_id, "temperature": temp_f, "operation_mode": "electric"})
-                await self._hass.services.async_call(
+                await self._async_call(
                     domain = "water_heater",
                     service = "set_temperature",
                     service_data = {"entity_id": entity_id, "temperature": temp_f, "operation_mode": "electric"}
@@ -938,14 +958,14 @@ class HACommandHandler:
                         _LOGGER.info("Kettle %s: on_off=True → water_heater.turn_on", device.get("id"))
                         self._track_ha_command(device, states, "water_heater", "turn_on",
                                                {"entity_id": entity_id})
-                        await self._hass.services.async_call(
+                        await self._async_call(
                             "water_heater", "turn_on", {"entity_id": entity_id}, blocking=False,
                         )
                     else:
                         _LOGGER.info("Kettle %s: on_off=False → water_heater.set_operation_mode(off)", device.get("id"))
                         self._track_ha_command(device, states, "water_heater", "set_operation_mode",
                                                {"entity_id": entity_id, "operation_mode": "off"})
-                        await self._hass.services.async_call(
+                        await self._async_call(
                             "water_heater", "set_operation_mode",
                             {"entity_id": entity_id, "operation_mode": "off"},
                             blocking=False,

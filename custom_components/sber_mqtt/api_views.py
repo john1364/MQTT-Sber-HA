@@ -13,6 +13,7 @@ from .api_devices import (
     SberPublishStatusView,
     SberDeviceTypesView,
     SberPanelView,
+    SberSettingsView,
 )
 from .api_entities import (
     SberHAEntitiesRelayView,
@@ -56,6 +57,7 @@ from .api_devtools import (
 __all__ = [
     "SberDevicesView", "SberDeviceView", "SberPublishConfigView",
     "SberPublishStatusView", "SberDeviceTypesView", "SberPanelView",
+    "SberSettingsView",
     "SberHAEntitiesRelayView", "SberHASensorsView",
     "SberHAEntitiesClimateView", "SberHAEntitiesVacuumView",
     "SberHAEntitiesValveView", "SberHAEntitiesLightView",

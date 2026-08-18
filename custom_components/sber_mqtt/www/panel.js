@@ -1,6 +1,25 @@
 // Sber MQTT Bridge — панель управления
 // Токен вшивается сервером: window.HA_ACCESS_TOKEN
 
+// ── Настройки ─────────────────────────────────────────────────────────
+async function openSettings(){
+  try{
+    const r=await api('/api/sber_mqtt/settings');
+    const sel=document.getElementById('settingsUser');
+    sel.innerHTML='<option value="">— без указания —</option>'+(r.users||[]).map(u=>`<option value="${esc(u.id)}" ${u.id===r.user_id?'selected':''}>${esc(u.name)}</option>`).join('');
+    document.getElementById('settingsOverlay').style.display='flex';
+  }catch(e){toast('Ошибка: '+e.message,'err');}
+}
+function closeSettings(){document.getElementById('settingsOverlay').style.display='none';}
+async function saveSettings(){
+  const user_id=document.getElementById('settingsUser').value;
+  try{
+    await api('/api/sber_mqtt/settings',{method:'POST',body:JSON.stringify({user_id})});
+    closeSettings();
+    toast('Сохранено','ok');
+  }catch(e){toast('Ошибка: '+e.message,'err');}
+}
+
 // Floating Action Button — показывать когда кнопка «Добавить» ушла за скролл
 window.addEventListener('scroll',()=>{
   const fabTop=document.querySelector('.fab-top');
