@@ -1,9 +1,7 @@
-# Sber MQTT Bridge fork
+# Sber MQTT Bridge — интеграция Home Assistant со Сбером
 
+[![Version](https://img.shields.io/badge/version-0.9.7-blue)](https://github.com/TohaRG2/MQTT-Sber-HA/releases)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange)](https://hacs.xyz)
-
-[Telegram с обсуждением оригинальной интеграции](https://t.me/+k_w9uO0h73FkNjJi) | [Интеграция Sber Boom в HA](https://github.com/dzerik/sboom_ha)
-
 
 Кастомная интеграция для Home Assistant, которая пробрасывает ваши устройства из HA в экосистему умного дома Сбера через MQTT.
 После настройки устройства появляются в приложении **Салют**, что позволяет управлять ими удалённо через интернет и голосовым помощником.
@@ -67,7 +65,7 @@
 ### Через HACS
 
 1. Откройте **HACS → Интеграции → ⋮ (три точки) → Пользовательские репозитории**
-2. Вставьте URL репозитория: `https://github.com/john1364/MQTT-Sber-HA`
+2. Вставьте URL репозитория: `https://github.com/TohaRG2/MQTT-Sber-HA`
 3. Тип: **Integration** → нажмите **Добавить**
 4. Найдите в списке **Sber MQTT Bridge** → нажмите **Скачать**
 5. Перезапустите Home Assistant
