@@ -656,12 +656,29 @@ class HACommandHandler:
         """Обрабатывает команды управления чайником от Сбера.
 
         Источник: сущность домена water_heater (SkyKettle и аналоги).
+
+        Сбер не присылает явных команд вида "выключить"/"вскипятить"/
+        "нагреть" — он шлёт только состояния on_off (BOOL) и, опционально,
+        kitchen_water_temperature_set (INTEGER). Намерение вычисляется из
+        их комбинации (см. логику ниже), и получаются ровно три сценария.
+
+        У каждой модели чайника свой operation_list со своими названиями
+        режимов (например off/heat/boil/boil_heat/lamp/light, или
+        "off"/Boiling/Warming/Heating/"IQ Boiling"), поэтому при добавлении
+        чайника в панели пользователь сопоставляет эти три сценария с
+        реальными значениями operation_list устройства — они сохраняются
+        в attributes (off_mode / boil_mode / heat_mode) и используются
+        здесь вместо захардкоженных строк "off"/"boil"/"heat".
+
         Логика:
-          on_off = false                      → выключить (set_operation_mode off)
-          on_off = true, temp = 100           → вскипятить (set_operation_mode boil)
-          on_off = true, temp < 100           → нагрев до температуры
-                                                (set_operation_mode heat + set_temperature)
-          on_off = true, температура не задана → вскипятить (boil)
+          on_off отсутствует/false            → выключить (set_operation_mode = off_mode)
+          on_off = true, temp задана          → set_temperature(temperature=temp, operation_mode)
+                                                 (100 или temp не задана → boil_mode, иначе heat_mode)
+          on_off = true, temp не задана       → вскипятить (set_operation_mode = boil_mode)
+
+        Для обратной совместимости с устройствами, добавленными до этого
+        сопоставления (в attributes нет off_mode/boil_mode/heat_mode),
+        используются старые значения "off"/"boil"/"heat".
         """
         attrs     = device.get("attributes", {})
         entity_id = attrs.get("entity_id", "")
@@ -669,6 +686,23 @@ class HACommandHandler:
         if not entity_id:
             _LOGGER.error("Чайник %s: не задан entity_id", device.get("id"))
             return
+
+        # Режимы устройства, выбранные пользователем при добавлении.
+        # Фолбэк на старые захардкоженные значения — для чайников,
+        # добавленных до появления этой настройки.
+        off_mode  = attrs.get("off_mode")  or "off"
+        boil_mode = attrs.get("boil_mode") or "boil"
+        # Если отдельного режима нагрева нет — используем режим кипячения.
+        heat_mode = attrs.get("heat_mode") or boil_mode
+
+        if not attrs.get("off_mode") or not attrs.get("boil_mode"):
+            _LOGGER.warning(
+                "Kettle %s: не заданы off_mode/boil_mode в attributes — "
+                "используются значения по умолчанию ('off'/'boil'). "
+                "Пересохраните устройство в панели, указав реальные "
+                "значения operation_list.",
+                device.get("id"),
+            )
 
         # Извлекаем on_off и целевую температуру из states
         on_off      = None
@@ -683,19 +717,19 @@ class HACommandHandler:
         # ── Выключение ────────────────────────────────────────────────────
         if on_off is False:
             _LOGGER.info(
-                "Kettle %s: on_off=False → water_heater.set_operation_mode(off)",
-                device.get("id"),
+                "Kettle %s: on_off=False → water_heater.set_operation_mode(%s)",
+                device.get("id"), off_mode,
             )
             self._track_ha_command(device, states, "water_heater", "set_operation_mode",
-                                   {"entity_id": entity_id, "operation_mode": "off"})
+                                   {"entity_id": entity_id, "operation_mode": off_mode})
             await self._hass.services.async_call(
                 "water_heater", "set_operation_mode",
-                {"entity_id": entity_id, "operation_mode": "off"},
+                {"entity_id": entity_id, "operation_mode": off_mode},
                 blocking=False,
             )
             return
 
-        # ── Включение / нагрев ────────────────────────────────────────────
+        # ── Включение / вскипятить / нагрев ─────────────────────────────────
         temp_f = None
         if target_temp is not None:
             try:
@@ -706,29 +740,33 @@ class HACommandHandler:
                 )
 
         # 100°C → кипячение, ниже → нагрев до температуры, без температуры → кипячение
-        if temp_f is not None and temp_f < 100:
-            operation_mode = "heat"
-        else:
-            operation_mode = "boil"
+        is_heat = temp_f is not None and temp_f < 100
+        operation_mode = heat_mode if is_heat else boil_mode
 
-        # Для нагрева ниже 100°C сначала выставляем целевую температуру,
-        # и только потом включаем режим heat. Иначе при включении чайник
-        # увидит старую (более низкую) целевую температуру и сразу выключится.
-        if operation_mode == "heat" and temp_f is not None:
+        # Сервис water_heater.set_temperature принимает не только
+        # temperature, но и operation_mode — можно выставить и температуру,
+        # и режим одной командой, без двух последовательных вызовов.
+        if temp_f is not None:
             _LOGGER.info(
-                "Kettle %s: water_heater.set_temperature(%.0f)", device.get("id"), temp_f
+                "Kettle %s: water_heater.set_temperature(temperature=%.0f, operation_mode=%s)",
+                device.get("id"), temp_f, operation_mode,
             )
             self._track_ha_command(device, states, "water_heater", "set_temperature",
-                                   {"entity_id": entity_id, "temperature": temp_f})
+                                   {"entity_id": entity_id, "temperature": temp_f,
+                                    "operation_mode": operation_mode})
             await self._hass.services.async_call(
                 "water_heater", "set_temperature",
-                {"entity_id": entity_id, "temperature": temp_f},
-                blocking=True,
+                {"entity_id": entity_id, "temperature": temp_f,
+                 "operation_mode": operation_mode},
+                blocking=False,
             )
+            return
 
+        # Температура не задана (просто on_off=true без temperature) —
+        # ставим только режим кипячения.
         _LOGGER.info(
-            "Kettle %s: on_off=%s, temp=%s → water_heater.set_operation_mode(%s)",
-            device.get("id"), on_off, target_temp, operation_mode,
+            "Kettle %s: on_off=%s, temp не задана → water_heater.set_operation_mode(%s)",
+            device.get("id"), on_off, operation_mode,
         )
         self._track_ha_command(device, states, "water_heater", "set_operation_mode",
                                {"entity_id": entity_id, "operation_mode": operation_mode})

@@ -192,14 +192,67 @@ class SberDevicesView(HomeAssistantView):
                 return web.json_response(
                     {"error": "attributes.entity_id is required for kettle"}, status=400
                 )
-            # Подтягиваем min_temp/max_temp из water_heater для allowed_values
-            if "min_temp" not in attrs:
-                ks = hass.states.get(attrs["entity_id"])
-                if ks:
-                    if ks.attributes.get("min_temp") is not None:
-                        attrs["min_temp"] = ks.attributes["min_temp"]
-                    if ks.attributes.get("max_temp") is not None:
-                        attrs["max_temp"] = ks.attributes["max_temp"]
+
+            # Сбер не присылает команды с явными именами вроде "boil" или
+            # "heat" — он шлёт только два поля состояния: on_off (BOOL) и
+            # kitchen_water_temperature_set (INTEGER, опционально).
+            # Из их комбинации ha_command_handler вычисляет намерение:
+            #   on_off отсутствует/false          → выключить
+            #   on_off=true, temp=100 или не задан → вскипятить
+            #   on_off=true, temp<100              → нагреть до temp
+            # Получаются ровно три сценария, и для каждого нужно знать,
+            # какому значению operation_list конкретного чайника он
+            # соответствует (у разных моделей разные названия режимов).
+            # Поэтому пользователь обязан сопоставить их при добавлении
+            # устройства. off_mode и boil_mode обязательны, heat_mode
+            # опционален — если у чайника нет отдельного режима нагрева
+            # до заданной температуры, используется boil_mode.
+            off_mode  = (attrs.get("off_mode")  or "").strip()
+            boil_mode = (attrs.get("boil_mode") or "").strip()
+            heat_mode = (attrs.get("heat_mode") or "").strip()
+
+            if not off_mode:
+                return web.json_response(
+                    {"error": "attributes.off_mode is required for kettle "
+                              "(выберите команду «Выключить» из operation_list устройства)"},
+                    status=400,
+                )
+            if not boil_mode:
+                return web.json_response(
+                    {"error": "attributes.boil_mode is required for kettle "
+                              "(выберите команду «Вскипятить» из operation_list устройства)"},
+                    status=400,
+                )
+
+            attrs["off_mode"]  = off_mode
+            attrs["boil_mode"] = boil_mode
+            if heat_mode:
+                attrs["heat_mode"] = heat_mode
+            else:
+                attrs.pop("heat_mode", None)
+
+            # Подтягиваем min_temp/max_temp/operation_list из water_heater
+            ks = hass.states.get(attrs["entity_id"])
+            if ks:
+                op_list = list(ks.attributes.get("operation_list", []) or [])
+                # Если у сущности известен operation_list — проверяем,
+                # что выбранные режимы действительно в нём есть.
+                if op_list:
+                    for field_name, value in (
+                        ("off_mode", off_mode),
+                        ("boil_mode", boil_mode),
+                        ("heat_mode", heat_mode) if heat_mode else (None, None),
+                    ):
+                        if field_name and value not in op_list:
+                            return web.json_response(
+                                {"error": f"attributes.{field_name} = '{value}' "
+                                          f"не найден в operation_list устройства {attrs['entity_id']}: {op_list}"},
+                                status=400,
+                            )
+                if "min_temp" not in attrs and ks.attributes.get("min_temp") is not None:
+                    attrs["min_temp"] = ks.attributes["min_temp"]
+                if "max_temp" not in attrs and ks.attributes.get("max_temp") is not None:
+                    attrs["max_temp"] = ks.attributes["max_temp"]
 
         # Формируем запись устройства
         device_entry = {

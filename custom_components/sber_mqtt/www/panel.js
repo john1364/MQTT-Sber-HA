@@ -320,7 +320,11 @@ async function wizValidate(){
     if(wType==='cover'&&!wData.entity_id){toast('Выберите шторы/жалюзи','err');return false;}
     if(wType==='water_leak'&&!wData.entity_id){toast('Выберите датчик протечки','err');return false;}
     if(wType==='smoke'&&!wData.entity_id){toast('Выберите датчик дыма','err');return false;}
-    if(wType==='kettle'&&!wData.entity_id){toast('Выберите сущность чайника','err');return false;}
+    if(wType==='kettle'){
+      if(!wData.entity_id){toast('Выберите сущность чайника','err');return false;}
+      if(!wData.off_mode){toast('Укажите режим для команды «Выключить»','err');return false;}
+      if(!wData.boil_mode){toast('Укажите режим для команды «Вскипятить»','err');return false;}
+    }
     if(wType==='humidifier'&&!wData.entity_id){toast('Выберите увлажнитель','err');return false;}
     if(wType==='sensor_temp'&&!wData.temperature_entity&&!wData.humidity_entity){toast('Выберите температуру или влажность','err');return false;}
   }
@@ -529,8 +533,8 @@ function renderStep2Socket(){
       <div class="p-list" style="max-height:150px" id="sklist">${socketItems()}</div>
     </div>
     ${wData.entity_id?`<div style="margin-top:10px;padding:8px 12px;background:var(--primary-lt);border-radius:7px;font-size:12px;color:var(--primary-dk)">✓ Выбрано: <b>${esc(wData.entity_id)}</b></div>`:''}
-    <div style="margin-top:14px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:#fafafa">
-      <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--fg)">⚡ Энергомониторинг</div>
+    <div style="margin-top:14px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:var(--bg)">
+      <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--text)">⚡ Энергомониторинг</div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Сенсоры автоматически подбираются при выборе устройства. Обязательны для типа «Розетка».</div>
       ${energyHtml}
     </div>
@@ -683,6 +687,9 @@ async function submitDevice(){
   }
   else if(wType==='kettle'){
     attrs.entity_id=wData.entity_id;attrs.entity_name=wData.entity_name||'';
+    if(wData.off_mode) attrs.off_mode=wData.off_mode;
+    if(wData.boil_mode)attrs.boil_mode=wData.boil_mode;
+    if(wData.heat_mode)attrs.heat_mode=wData.heat_mode;
   }
   else if(wType==='humidifier'){
     attrs.entity_id=wData.entity_id;attrs.entity_name=wData.entity_name||'';
@@ -1350,8 +1357,8 @@ function renderStep2Humidifier(){
       <div class="p-list" style="max-height:160px" id="humlist">${humItems()}</div>
     </div>
     ${sel?`<div style="margin-top:10px;padding:8px 12px;background:var(--primary-lt);border-radius:7px;font-size:12px;color:var(--primary-dk)">✓ Выбрано: <b>${esc(sel)}</b></div>`:''}
-    <div style="margin-top:14px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:#fafafa">
-      <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--fg)">Дополнительные сенсоры</div>
+    <div style="margin-top:14px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:var(--bg)">
+      <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--text)">Дополнительные сенсоры</div>
       ${optHtml}
     </div>
     <div id="humSensorPickerWrap" style="display:none;margin-top:10px">
@@ -1448,6 +1455,7 @@ async function fetchNumber(){
 
 function renderStep2Kettle(){
   const sel = wData.entity_id;
+  const selEntity = haKettle.find(e=>e.entity_id===sel);
   return `<div class="fg" style="margin-bottom:10px"><label>Выберите чайник (water_heater):</label></div>
     <div class="picker">
       <div class="psearch"><span style="color:var(--muted)">🔍</span>
@@ -1459,6 +1467,7 @@ function renderStep2Kettle(){
       <div class="p-list" style="max-height:200px" id="kettlelist">${kettleItems()}</div>
     </div>
     ${sel?`<div style="margin-top:10px;padding:8px 12px;background:var(--primary-lt);border-radius:7px;font-size:12px;color:var(--primary-dk)">✓ Выбрано: <b>${esc(sel)}</b></div>`:''}
+    ${sel?renderKettleModes(selEntity):''}
     <div style="margin-top:12px;font-size:11px;color:var(--muted)">
       Текущая и целевая температура воды подтягиваются автоматически из атрибутов сущности.
     </div>`;
@@ -1472,8 +1481,73 @@ function kettleItems(){
     <span class="p-name">${esc(e.friendly_name)}${usedBadge(e.entity_id)}</span><span class="p-eid">${esc(e.entity_id)}</span></div>`).join('');
 }
 
+// Сопоставление команд Сбера (вскипятить/нагреть/выключить) с реальными
+// значениями operation_list устройства — у разных чайников свой набор
+// и свои названия режимов, поэтому пользователь выбирает их вручную.
+const ICON_POWER  = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42A6.92 6.92 0 0 1 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.24 1.06-4.23 2.71-5.5L6.29 5.08A8.94 8.94 0 0 0 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9a8.94 8.94 0 0 0-3.17-6.83z"/></svg>';
+const ICON_BOIL   = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z"/></svg>';
+const ICON_HEAT   = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M15 13V5c0-1.66-1.34-3-3-3S9 3.34 9 5v8c-1.21.91-2 2.37-2 4 0 2.76 2.24 5 5 5s5-2.24 5-5c0-1.63-.79-3.09-2-4zm-4-8c0-.55.45-1 1-1s1 .45 1 1h-1v1h1v2h-1v1h1v2h-2V5z"/></svg>';
+
+const KETTLE_COMMANDS = [
+  {field:'off_mode',  icon:ICON_POWER, label:'Выключить',  hint:'Команда «выключи» из Сбера',   required:true,  guesses:['off','выкл','stop','standby']},
+  {field:'boil_mode', icon:ICON_BOIL,  label:'Вскипятить', hint:'Команда «вскипяти» из Сбера', required:true,  guesses:['boil','кипят','вскип']},
+  {field:'heat_mode', icon:ICON_HEAT,  label:'Нагреть',    hint:'Команда «нагрей» из Сбера (до заданной температуры). Если у чайника нет отдельного режима нагрева — оставьте «Не поддерживается», будет использован режим кипячения.', required:false, guesses:['heat','warm','нагрев','подогрев']},
+];
+
+function guessKettleMode(opList, guesses){
+  if(!opList||!opList.length)return'';
+  for(const g of guesses){
+    const hit=opList.find(v=>String(v).toLowerCase().includes(g));
+    if(hit)return hit;
+  }
+  return'';
+}
+
+function renderKettleModes(entity){
+  const opList = entity?(entity.operation_list||[]):[];
+  if(!opList.length){
+    return `<div style="margin-top:16px;padding:10px 12px;background:color-mix(in srgb, var(--bg) 85%, var(--danger) 15%);border:1px solid var(--danger);border-radius:7px;font-size:12px;color:var(--text)">
+      ⚠️ У выбранной сущности не найден атрибут <b>operation_list</b> — сопоставить команды невозможно.
+      Проверьте, что сущность поддерживает режимы работы (water_heater.operation_list).
+    </div>`;
+  }
+  // Автоматически подставляем первое совпадение по эвристике при первом рендере
+  KETTLE_COMMANDS.forEach(cmd=>{
+    if(wData[cmd.field]===undefined){
+      wData[cmd.field]=guessKettleMode(opList,cmd.guesses);
+    }
+  });
+  return `<div style="margin-top:18px">
+    <div class="fg"><label>Соответствие команд Сбера режимам чайника:</label>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px">
+        Из Сбера может прийти только три команды: вскипятить, нагреть и выключить.
+        Укажите, каким значениям operation_list вашего чайника они соответствуют.
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+      ${KETTLE_COMMANDS.map(cmd=>{
+        const val = wData[cmd.field]||'';
+        const options = [`<option value="">${cmd.required?'— выберите —':'— не поддерживается —'}</option>`]
+          .concat(opList.map(v=>`<option value="${esc(v)}" ${val===v?'selected':''}>${esc(v)}</option>`)).join('');
+        return `<div style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card)">
+          <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:6px">${cmd.icon}${cmd.label}${cmd.required?' <span style=\"color:var(--danger)\">*</span>':''}</div>
+          <select style="width:100%;box-sizing:border-box;margin-top:6px;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--card);color:var(--text)"
+            onchange="setKettleMode('${cmd.field}',this.value)">${options}</select>
+          <div style="font-size:11px;color:var(--muted);margin-top:5px">${cmd.hint}</div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+function setKettleMode(field,val){
+  wData[field]=val;
+}
+
 function pickKettleEntity(eid,name,area){
   wData.entity_id=eid;wData.entity_name=name;wData.entity_area=area;
+  // Сбрасываем сопоставление команд — оно зависит от конкретной сущности
+  delete wData.off_mode;delete wData.boil_mode;delete wData.heat_mode;
   document.getElementById('wizContent').innerHTML=renderStep2Kettle();
 }
 

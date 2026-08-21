@@ -234,7 +234,15 @@ class SberHAEntitiesNumberView(HomeAssistantView):
 # ── GET /api/sber_mqtt/ha_entities/water_heater ───────────────────────────
 
 class SberHAEntitiesWaterHeaterView(HomeAssistantView):
-    """Список water_heater сущностей HA для чайника."""
+    """Список water_heater сущностей HA для чайника.
+
+    Возвращает также operation_list каждой сущности — у разных чайников
+    (SkyKettle, Redmond, Xiaomi и т.д.) набор режимов и их названия
+    отличаются (например: off/heat/boil/boil_heat/lamp/light или
+    "off"/Boiling/Warming/Heating/"IQ Boiling"). Список нужен панели,
+    чтобы пользователь сам сопоставил три команды Сбера
+    (вскипятить/нагреть/выключить) с реальными режимами устройства.
+    """
 
     url  = "/api/sber_mqtt/ha_entities/water_heater"
     name = "api:sber_mqtt:ha_entities_water_heater"
@@ -245,7 +253,15 @@ class SberHAEntitiesWaterHeaterView(HomeAssistantView):
 
     async def get(self, request: web.Request) -> web.Response:
         hass: HomeAssistant = request.app["hass"]
-        entities = get_ha_entities(hass, "water_heater")
+
+        def _operation_list(s, e):
+            if not s:
+                return []
+            return list(s.attributes.get("operation_list", []) or [])
+
+        entities = get_ha_entities(
+            hass, "water_heater", extra_fields={"operation_list": _operation_list}
+        )
         return web.json_response({"entities": entities})
 
 
