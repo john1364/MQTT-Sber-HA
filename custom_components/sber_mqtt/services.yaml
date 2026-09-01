@@ -1,0 +1,3 @@
+reconnect:
+  name: Reconnect
+  description: Принудительное переподключение к Sber MQTT брокеру.
