@@ -298,3 +298,27 @@ def _parse_integer(val_obj: dict, default: int = 0) -> int:
     if isinstance(raw, float):
         return int(raw)
     return default
+
+
+def tv_features_from_supported(supported_features: Any) -> dict[str, bool]:
+    """Разбирает битовую маску supported_features сущности media_player.
+
+    Возвращает флаги, которые определяют набор функций телевизора в Сбере:
+      supports_volume_set  → volume_int (абсолютная громкость)
+      supports_mute        → mute
+      supports_volume_step → volume (громче / тише)
+    """
+    from .const import (
+        TV_FEATURE_VOLUME_SET,
+        TV_FEATURE_VOLUME_MUTE,
+        TV_FEATURE_VOLUME_STEP,
+    )
+    try:
+        sf = int(supported_features or 0)
+    except (ValueError, TypeError):
+        sf = 0
+    return {
+        "supports_volume_set":  bool(sf & TV_FEATURE_VOLUME_SET),
+        "supports_mute":        bool(sf & TV_FEATURE_VOLUME_MUTE),
+        "supports_volume_step": bool(sf & TV_FEATURE_VOLUME_STEP),
+    }

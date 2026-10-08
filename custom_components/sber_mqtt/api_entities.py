@@ -7,7 +7,12 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
-from .ha_helpers import get_entities_for_relay, get_sensor_entities, get_ha_entities
+from .ha_helpers import (
+    get_entities_for_relay,
+    get_sensor_entities,
+    get_ha_entities,
+    tv_features_from_supported,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -300,4 +305,33 @@ class SberHAEntitiesSocketView(HomeAssistantView):
     async def get(self, request: web.Request) -> web.Response:
         hass: HomeAssistant = request.app["hass"]
         entities = get_ha_entities(hass, ["switch", "input_boolean"])
+        return web.json_response({"entities": entities})
+
+
+# ── GET /api/sber_mqtt/ha_entities/tv ────────────────────────────────────────
+
+class SberHAEntitiesTVView(HomeAssistantView):
+    """Список media_player-сущностей HA для привязки к телевизору.
+
+    Для каждой сущности возвращает флаги поддерживаемых функций
+    (громкость, mute, шаг громкости) — по ним панель показывает, что
+    будет доступно в Салюте.
+    """
+
+    url  = "/api/sber_mqtt/ha_entities/tv"
+    name = "api:sber_mqtt:ha_entities_tv"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        pass
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+
+        def _flags(s, e):
+            if not s:
+                return {}
+            return tv_features_from_supported(s.attributes.get("supported_features"))
+
+        entities = get_ha_entities(hass, "media_player", extra_fields={"tv_features": _flags})
         return web.json_response({"entities": entities})

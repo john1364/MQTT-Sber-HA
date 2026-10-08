@@ -43,6 +43,7 @@ DEVICE_TYPE_HUMIDIFIER      = "humidifier"       # Увлажнитель воз
 DEVICE_TYPE_SOCKET          = "socket"           # Розетка с энергомониторингом
 DEVICE_TYPE_SMOKE           = "smoke"            # Датчик дыма
 DEVICE_TYPE_KETTLE          = "kettle"           # Чайник
+DEVICE_TYPE_TV              = "tv"               # Телевизор (media_player)
 
 # Маппинг скоростей вентилятора Сбер → HA (humidifier mode)
 # Сбер: auto | low | medium | high | turbo | quiet
@@ -123,6 +124,7 @@ SUPPORTED_DEVICE_TYPES = {
     DEVICE_TYPE_SOCKET:          "Розетка",
     DEVICE_TYPE_SMOKE:           "Датчик дыма",
     DEVICE_TYPE_KETTLE:          "Чайник",
+    DEVICE_TYPE_TV:              "Телевизор",
 }
 
 # ── Домены HA для типа "реле" ─────────────────────────────────────────────
@@ -294,3 +296,26 @@ SBER_COVER_COMMAND_TO_HA = {
     "close": ("cover", "close_cover"),
     "stop":  ("cover", "stop_cover"),
 }
+
+# ── Телевизор (tv) ────────────────────────────────────────────────────────
+# Сбер категория: tv. HA domain: media_player.
+# Поддерживаемые функции Сбера: online, on_off, mute, volume_int, volume.
+# Остальные (channel, source, direction, custom_key, number…) пока не реализованы.
+TV_DOMAINS = {"media_player"}
+
+# Состояния media_player, которые считаем «выключен» (всё остальное — включён).
+# standby — телевизор в режиме ожидания, для пользователя это «выключен».
+TV_OFF_STATES = {"off", "standby"}
+
+# Биты MediaPlayerEntityFeature (supported_features)
+TV_FEATURE_VOLUME_SET  = 4
+TV_FEATURE_VOLUME_MUTE = 8
+TV_FEATURE_VOLUME_STEP = 1024
+
+# Шаг громкости (в долях 0..1) для команды volume "+"/"-",
+# если сущность не поддерживает volume_up/volume_down, но умеет volume_set
+TV_VOLUME_FALLBACK_STEP = 0.05
+
+# Значения команды volume от Сбера → направление
+SBER_TV_VOLUME_UP   = {"+", "up", "volume_up", "louder"}
+SBER_TV_VOLUME_DOWN = {"-", "down", "volume_down", "quieter"}

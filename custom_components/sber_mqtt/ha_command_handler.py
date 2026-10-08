@@ -51,6 +51,8 @@ class HACommandHandler:
             await self._handle_humidifier_command(device, states)
         elif device_type == "kettle":
             await self._handle_kettle_command(device, states)
+        elif device_type == "tv":
+            await self._handle_tv_command(device, states)
         elif device_type == "vacuum_cleaner":
             await self._handle_vacuum_command(device, states)
         elif device_type == "valve":
@@ -590,6 +592,121 @@ class HACommandHandler:
                     )
                 except (ValueError, TypeError):
                     pass
+
+    async def _handle_tv_command(self, device: dict, states: list) -> None:
+        """Обрабатывает команды управления телевизором от Сбера.
+
+        Источник: сущность домена media_player.
+
+        Поддерживаемые команды:
+          on_off     — включить/выключить (media_player.turn_on / turn_off)
+          mute       — бесшумный режим (media_player.volume_mute)
+          volume_int — громкость 0–100 → media_player.volume_set (0.0–1.0)
+          volume     — «громче»/«тише» ("+"/"-") → media_player.volume_up / volume_down;
+                       если сущность не умеет шаг громкости, но умеет volume_set —
+                       считаем новую громкость сами (±5%)
+        """
+        from .const import (
+            SBER_TV_VOLUME_UP,
+            SBER_TV_VOLUME_DOWN,
+            TV_FEATURE_VOLUME_SET,
+            TV_FEATURE_VOLUME_STEP,
+            TV_VOLUME_FALLBACK_STEP,
+        )
+
+        attrs     = device.get("attributes", {})
+        entity_id = attrs.get("entity_id", "")
+        dev_id    = device.get("id")
+
+        if not entity_id:
+            _LOGGER.error("ТВ %s: не задан entity_id", dev_id)
+            return
+
+        for state in states:
+            key     = state.get("key")
+            val_obj = state.get("value", {}) or {}
+
+            if key == "on_off":
+                is_on   = _parse_bool(val_obj)
+                service = "turn_on" if is_on else "turn_off"
+                _LOGGER.info("ТВ %s: on_off=%s → media_player.%s", dev_id, is_on, service)
+                data = {"entity_id": entity_id}
+                self._track_ha_command(device, states, "media_player", service, data)
+                await self._hass.services.async_call(
+                    "media_player", service, data, blocking=False
+                )
+
+            elif key == "mute":
+                # Протокол Сбера: отсутствие bool_value трактуется как false (звук включить)
+                muted = _parse_bool(val_obj)
+                _LOGGER.info("ТВ %s: mute=%s → media_player.volume_mute", dev_id, muted)
+                data = {"entity_id": entity_id, "is_volume_muted": muted}
+                self._track_ha_command(device, states, "media_player", "volume_mute", data)
+                await self._hass.services.async_call(
+                    "media_player", "volume_mute", data, blocking=False
+                )
+
+            elif key == "volume_int":
+                pct   = max(0, min(100, _parse_integer(val_obj, 0)))
+                level = round(pct / 100, 2)
+                _LOGGER.info("ТВ %s: volume_int=%d → media_player.volume_set(%.2f)", dev_id, pct, level)
+                data = {"entity_id": entity_id, "volume_level": level}
+                self._track_ha_command(device, states, "media_player", "volume_set", data)
+                await self._hass.services.async_call(
+                    "media_player", "volume_set", data, blocking=False
+                )
+
+            elif key == "volume":
+                direction = str(val_obj.get("enum_value", "")).strip().lower()
+                if direction in SBER_TV_VOLUME_UP:
+                    step_up = True
+                elif direction in SBER_TV_VOLUME_DOWN:
+                    step_up = False
+                else:
+                    _LOGGER.warning("ТВ %s: неизвестная команда volume '%s'", dev_id, direction)
+                    continue
+
+                # Возможности берём из живого состояния сущности
+                ha_state = self._hass.states.get(entity_id)
+                try:
+                    sf = int(ha_state.attributes.get("supported_features") or 0) if ha_state else 0
+                except (ValueError, TypeError):
+                    sf = 0
+
+                if sf & TV_FEATURE_VOLUME_STEP or not (sf & TV_FEATURE_VOLUME_SET):
+                    # Штатный шаг громкости (также запасной вариант, если флаги
+                    # неизвестны — пусть HA сам вернёт ошибку, если не поддерживается)
+                    service = "volume_up" if step_up else "volume_down"
+                    _LOGGER.info("ТВ %s: volume '%s' → media_player.%s", dev_id, direction, service)
+                    data = {"entity_id": entity_id}
+                    self._track_ha_command(device, states, "media_player", service, data)
+                    await self._hass.services.async_call(
+                        "media_player", service, data, blocking=False
+                    )
+                else:
+                    # Нет volume_up/down, но есть volume_set — считаем сами
+                    current = ha_state.attributes.get("volume_level") if ha_state else None
+                    try:
+                        current = float(current)
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(
+                            "ТВ %s: volume '%s' — текущая громкость неизвестна, команда пропущена",
+                            dev_id, direction,
+                        )
+                        continue
+                    delta = TV_VOLUME_FALLBACK_STEP if step_up else -TV_VOLUME_FALLBACK_STEP
+                    level = round(max(0.0, min(1.0, current + delta)), 2)
+                    _LOGGER.info(
+                        "ТВ %s: volume '%s' → media_player.volume_set(%.2f)", dev_id, direction, level
+                    )
+                    data = {"entity_id": entity_id, "volume_level": level}
+                    self._track_ha_command(device, states, "media_player", "volume_set", data)
+                    await self._hass.services.async_call(
+                        "media_player", "volume_set", data, blocking=False
+                    )
+
+            else:
+                _LOGGER.debug("ТВ %s: команда '%s' не поддерживается, пропущена", dev_id, key)
 
     async def _handle_humidifier_command(self, device: dict, states: list) -> None:
         """Обрабатывает команды управления увлажнителем от Сбера.

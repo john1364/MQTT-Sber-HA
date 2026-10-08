@@ -23,10 +23,12 @@ from .const import (
     DEVICE_TYPE_HUMIDIFIER,
     DEVICE_TYPE_SMOKE,
     DEVICE_TYPE_KETTLE,
+    DEVICE_TYPE_TV,
     SUPPORTED_DEVICE_TYPES,
 )
 from .api_common import _get_entry_data, _slugify
 from .state_builder import build_current_state_payload
+from .ha_helpers import tv_features_from_supported
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -253,6 +255,33 @@ class SberDevicesView(HomeAssistantView):
                     attrs["min_temp"] = ks.attributes["min_temp"]
                 if "max_temp" not in attrs and ks.attributes.get("max_temp") is not None:
                     attrs["max_temp"] = ks.attributes["max_temp"]
+        elif device_type == DEVICE_TYPE_TV:
+            entity_id = attrs.get("entity_id", "")
+            if not entity_id:
+                return web.json_response(
+                    {"error": "attributes.entity_id is required for tv"}, status=400
+                )
+            if not entity_id.startswith("media_player."):
+                return web.json_response(
+                    {"error": "tv requires a media_player entity"}, status=400
+                )
+
+            # Набор функций ТВ в Сбере (mute / volume_int / volume) определяется
+            # тем, что умеет сущность. Фиксируем флаги при добавлении, чтобы
+            # конфиг не менялся от того, включён ли телевизор в данный момент.
+            # Если состояния нет (интеграция ТВ ещё не загрузилась) — считаем,
+            # что поддерживается всё.
+            ts = hass.states.get(entity_id)
+            if ts:
+                flags = tv_features_from_supported(ts.attributes.get("supported_features"))
+            else:
+                flags = {
+                    "supports_volume_set":  True,
+                    "supports_mute":        True,
+                    "supports_volume_step": True,
+                }
+            for flag_name, flag_val in flags.items():
+                attrs.setdefault(flag_name, flag_val)
 
         # Формируем запись устройства
         device_entry = {

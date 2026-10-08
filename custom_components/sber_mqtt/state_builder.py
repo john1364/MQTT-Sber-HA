@@ -28,6 +28,8 @@ from .const import (
     HA_AC_SWING_TO_SBER,
     DEVICE_TYPE_SMOKE,
     DEVICE_TYPE_KETTLE,
+    DEVICE_TYPE_TV,
+    TV_OFF_STATES,
 )
 
 if TYPE_CHECKING:
@@ -313,6 +315,33 @@ def build_current_state_payload(
         return serializer.build_kettle_state_payload(
             device_id, is_on, current_temp, target_temp
         )
+
+    # ── Телевизор ────────────────────────────────────────────────────────
+    if device_type == DEVICE_TYPE_TV:
+        entity_id = attrs.get("entity_id", "")
+        tvs = hass.states.get(entity_id)
+        if not tvs:
+            return None
+
+        # media_player: off/standby → выключен, всё остальное → включён
+        is_on = tvs.state not in TV_OFF_STATES and tvs.state not in ("unavailable", "unknown")
+
+        # Громкость (volume_level 0.0–1.0 → 0–100) и mute передаём только если
+        # эти функции объявлены в конфиге и атрибут реально есть у сущности
+        # (у выключенного ТВ атрибутов громкости часто нет).
+        volume: int | None = None
+        if attrs.get("supports_volume_set", True):
+            level = _safe_float(tvs, "volume_level")
+            if level is not None:
+                volume = round(max(0.0, min(1.0, level)) * 100)
+
+        muted: bool | None = None
+        if attrs.get("supports_mute", True):
+            raw_muted = tvs.attributes.get("is_volume_muted")
+            if isinstance(raw_muted, bool):
+                muted = raw_muted
+
+        return serializer.build_tv_state_payload(device_id, is_on, volume, muted)
 
     # ── Увлажнитель воздуха ──────────────────────────────────────────────
     if device_type == "humidifier":

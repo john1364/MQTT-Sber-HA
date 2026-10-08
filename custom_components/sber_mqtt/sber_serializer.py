@@ -72,6 +72,7 @@ from .const import (
     DEVICE_TYPE_SOCKET,
     DEVICE_TYPE_SMOKE,
     DEVICE_TYPE_KETTLE,
+    DEVICE_TYPE_TV,
     HA_HVAC_MODE_TO_SBER,
     HA_MODE_TO_SBER_AIR_FLOW,
     SIGNAL_STRENGTH_LOW_THRESHOLD,
@@ -156,6 +157,8 @@ class SberSerializer:
             return self._smoke_config(device_id, device)
         if device_type == DEVICE_TYPE_KETTLE:
             return self._kettle_config(device_id, device)
+        if device_type == DEVICE_TYPE_TV:
+            return self._tv_config(device_id, device)
         _LOGGER.warning("Неизвестный тип устройства: %s", device_type)
         return None
 
@@ -574,6 +577,52 @@ class SberSerializer:
                 }
             except (ValueError, TypeError):
                 pass
+
+        entry = {
+            "id":         device_id,
+            "name":       device.get("name", device_id),
+            "hw_version": HW_VERSION,
+            "sw_version": SW_VERSION,
+            "model":      model,
+            "model_id":   "",
+        }
+        if device.get("room"):
+            entry["room"] = device["room"]
+        return entry
+
+    def _tv_config(self, device_id: str, device: dict) -> dict:
+        """Конфиг для телевизора (tv).
+
+        Источник: сущность домена media_player.
+        Обязательные функции: online, on_off.
+        Опциональные (по возможностям сущности, флаги сохранены при добавлении):
+          mute       — бесшумный режим          (is_volume_muted / volume_mute)
+          volume_int — уровень громкости 0–100  (volume_level / volume_set)
+          volume     — громче / тише            (volume_up / volume_down)
+        """
+        attrs = device.get("attributes", {})
+        features = ["online", "on_off"]
+        if attrs.get("supports_mute", True):
+            features.append("mute")
+        if attrs.get("supports_volume_set", True):
+            features.append("volume_int")
+        if attrs.get("supports_volume_set", True) or attrs.get("supports_volume_step", True):
+            features.append("volume")
+
+        model: dict = {
+            "id":           "ID_tv",
+            "manufacturer": MANUFACTURER,
+            "model":        "Model_tv",
+            "category":     DEVICE_TYPE_TV,
+            "features":     features,
+        }
+        if "volume_int" in features:
+            model["allowed_values"] = {
+                "volume_int": {
+                    "type": "INTEGER",
+                    "integer_values": {"min": "0", "max": "100", "step": "1"},
+                }
+            }
 
         entry = {
             "id":         device_id,
@@ -1071,6 +1120,35 @@ class SberSerializer:
                 states.append({
                     "key": "kitchen_water_temperature_set",
                     "value": {"type": "INTEGER", "integer_value": max(0, min(100, round(float(target_temp))))},
+                })
+            except (ValueError, TypeError):
+                pass
+        return json.dumps({"devices": {device_id: {"states": states}}}, ensure_ascii=False)
+
+    def build_tv_state_payload(
+        self,
+        device_id: str,
+        is_on: bool,
+        volume: int | None = None,
+        muted: bool | None = None,
+    ) -> str:
+        """Состояние телевизора.
+
+        is_on  — включён/выключен (on_off)
+        volume — громкость 0–100 (volume_int); None — не передавать
+        muted  — бесшумный режим (mute); None — не передавать
+        """
+        states: list[dict] = [
+            {"key": "online", "value": {"type": "BOOL", "bool_value": True}},
+            {"key": "on_off", "value": {"type": "BOOL", "bool_value": is_on}},
+        ]
+        if muted is not None:
+            states.append({"key": "mute", "value": {"type": "BOOL", "bool_value": bool(muted)}})
+        if volume is not None:
+            try:
+                states.append({
+                    "key": "volume_int",
+                    "value": {"type": "INTEGER", "integer_value": max(0, min(100, int(volume)))},
                 })
             except (ValueError, TypeError):
                 pass

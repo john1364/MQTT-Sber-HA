@@ -26,7 +26,7 @@ async function api(url, opts={}) {
 // ═══════════════════════════════════════════════════════════
 // КОНФИГУРАЦИЯ И СОСТОЯНИЕ
 // ═══════════════════════════════════════════════════════════
-const TYPE_LABELS = { relay:'Реле', sensor_temp:'Датчик температуры/влажности', scenario_button:'Сценарная кнопка', hvac_ac:'Кондиционер', vacuum_cleaner:'Пылесос', valve:'Кран', light:'Лампа', cover:'Рулонные шторы / жалюзи', water_leak:'Датчик протечки', humidifier:'Увлажнитель воздуха', socket:'Розетка', smoke:'Датчик дыма', kettle:'Чайник' };
+const TYPE_LABELS = { relay:'Реле', sensor_temp:'Датчик температуры/влажности', scenario_button:'Сценарная кнопка', hvac_ac:'Кондиционер', vacuum_cleaner:'Пылесос', valve:'Кран', light:'Лампа', cover:'Рулонные шторы / жалюзи', water_leak:'Датчик протечки', humidifier:'Увлажнитель воздуха', socket:'Розетка', smoke:'Датчик дыма', kettle:'Чайник', tv:'Телевизор' };
 const STEPS = {
   relay:           ['Тип устройства','Источник в HA','Параметры'],
   sensor_temp:     ['Тип устройства','Датчики в HA','Параметры'],
@@ -39,6 +39,7 @@ const STEPS = {
   water_leak:      ['Тип устройства','Датчик в HA','Параметры'],
   smoke:           ['Тип устройства','Датчик в HA','Параметры'],
   kettle:          ['Тип устройства','Источник в HA','Параметры'],
+  tv:              ['Тип устройства','Источник в HA','Параметры'],
   humidifier:      ['Тип устройства','Источник в HA','Параметры'],
   socket:          ['Тип устройства','Источник в HA','Параметры'],
 };
@@ -282,7 +283,7 @@ function openWizard(){
 function closeWizard(){
   document.getElementById('wiz').style.display='none';
   // Полный сброс состояния чтобы следующее открытие начиналось чисто
-  wStep=1;wType=null;wData={};sFilter='';spField=null;haRelay=[];haSensors=[];haClimate=[];haVacuum=[];haValve=[];haLight=[];haCover=[];haWaterLeak=[];haHumidifier=[];haSmoke=[];haKettle=[];haNumber=[];
+  wStep=1;wType=null;wData={};sFilter='';spField=null;haRelay=[];haSensors=[];haClimate=[];haVacuum=[];haValve=[];haLight=[];haCover=[];haWaterLeak=[];haHumidifier=[];haSmoke=[];haKettle=[];haNumber=[];haTV=[];
   const btn=document.getElementById('btnNext');
   if(btn){btn.disabled=false;btn.textContent='Далее →';}
 }
@@ -293,7 +294,7 @@ async function wizNext(){
   if(wStep<total){
     wStep++;
     // Загружаем список сущностей при переходе на шаг 2 (если ещё не загружены)
-    if(wStep===2){if(wType==='relay')await Promise.all([fetchRelay(),fetchSensors()]);if(wType==='sensor_temp')await fetchSensors();if(wType==='scenario_button')await fetchRelay();if(wType==='hvac_ac')await Promise.all([fetchClimate(),fetchSensors(),fetchSocket()]);if(wType==='vacuum_cleaner')await Promise.all([fetchVacuum(),fetchSensors()]);if(wType==='valve')await fetchValve();if(wType==='light')await fetchLight();if(wType==='cover')await Promise.all([fetchCover(),fetchSensors()]);if(wType==='water_leak')await Promise.all([fetchWaterLeak(),fetchSensors()]);if(wType==='humidifier')await Promise.all([fetchHumidifier(),fetchSensors()]);if(wType==='socket')await Promise.all([fetchSocket(),fetchSensors()]);if(wType==='smoke')await Promise.all([fetchSmoke(),fetchSensors()]);if(wType==='kettle')await fetchKettle();}
+    if(wStep===2){if(wType==='relay')await Promise.all([fetchRelay(),fetchSensors()]);if(wType==='sensor_temp')await fetchSensors();if(wType==='scenario_button')await fetchRelay();if(wType==='hvac_ac')await Promise.all([fetchClimate(),fetchSensors(),fetchSocket()]);if(wType==='vacuum_cleaner')await Promise.all([fetchVacuum(),fetchSensors()]);if(wType==='valve')await fetchValve();if(wType==='light')await fetchLight();if(wType==='cover')await Promise.all([fetchCover(),fetchSensors()]);if(wType==='water_leak')await Promise.all([fetchWaterLeak(),fetchSensors()]);if(wType==='humidifier')await Promise.all([fetchHumidifier(),fetchSensors()]);if(wType==='socket')await Promise.all([fetchSocket(),fetchSensors()]);if(wType==='smoke')await Promise.all([fetchSmoke(),fetchSensors()]);if(wType==='kettle')await fetchKettle();if(wType==='tv')await fetchTV();}
     renderWiz();
   }else{
     await submitDevice();
@@ -325,6 +326,7 @@ async function wizValidate(){
       if(!wData.off_mode){toast('Укажите режим для команды «Выключить»','err');return false;}
       if(!wData.boil_mode){toast('Укажите режим для команды «Вскипятить»','err');return false;}
     }
+    if(wType==='tv'&&!wData.entity_id){toast('Выберите телевизор (media_player)','err');return false;}
     if(wType==='humidifier'&&!wData.entity_id){toast('Выберите увлажнитель','err');return false;}
     if(wType==='sensor_temp'&&!wData.temperature_entity&&!wData.humidity_entity){toast('Выберите температуру или влажность','err');return false;}
   }
@@ -358,7 +360,7 @@ function renderWiz(){
   }).join('');
   const c=document.getElementById('wizContent');
   if(wStep===1)c.innerHTML=renderStep1();
-  else if(wStep===2){if(wType==='relay')c.innerHTML=renderStep2Relay();else if(wType==='scenario_button')c.innerHTML=renderStep2ScenarioButton();else if(wType==='hvac_ac')c.innerHTML=renderStep2HvacAc();else if(wType==='vacuum_cleaner')c.innerHTML=renderStep2Vacuum();else if(wType==='valve')c.innerHTML=renderStep2Valve();else if(wType==='light')c.innerHTML=renderStep2Light();else if(wType==='cover')c.innerHTML=renderStep2Cover();else if(wType==='water_leak')c.innerHTML=renderStep2WaterLeak();else if(wType==='humidifier')c.innerHTML=renderStep2Humidifier();else if(wType==='socket')c.innerHTML=renderStep2Socket();else if(wType==='smoke')c.innerHTML=renderStep2Smoke();else if(wType==='kettle')c.innerHTML=renderStep2Kettle();else c.innerHTML=renderStep2Sensor();}
+  else if(wStep===2){if(wType==='relay')c.innerHTML=renderStep2Relay();else if(wType==='scenario_button')c.innerHTML=renderStep2ScenarioButton();else if(wType==='hvac_ac')c.innerHTML=renderStep2HvacAc();else if(wType==='vacuum_cleaner')c.innerHTML=renderStep2Vacuum();else if(wType==='valve')c.innerHTML=renderStep2Valve();else if(wType==='light')c.innerHTML=renderStep2Light();else if(wType==='cover')c.innerHTML=renderStep2Cover();else if(wType==='water_leak')c.innerHTML=renderStep2WaterLeak();else if(wType==='humidifier')c.innerHTML=renderStep2Humidifier();else if(wType==='socket')c.innerHTML=renderStep2Socket();else if(wType==='smoke')c.innerHTML=renderStep2Smoke();else if(wType==='kettle')c.innerHTML=renderStep2Kettle();else if(wType==='tv')c.innerHTML=renderStep2TV();else c.innerHTML=renderStep2Sensor();}
   else c.innerHTML=renderStep3();
 }
 
@@ -371,6 +373,7 @@ function renderStep1(){
       {id:'hvac_ac',        icon:'❄️', name:'Кондиционер',             desc:'climate — температура и режимы работы'},
       {id:'humidifier',     icon:'💧', name:'Увлажнитель воздуха',     desc:'humidifier — влажность, режим, скорость вентилятора'},
       {id:'kettle',         icon:'☕', name:'Чайник',                  desc:'water_heater — включение, целевая и текущая температура воды'},
+      {id:'tv',             icon:'📺', name:'Телевизор',               desc:'media_player — включение, громкость и отключение звука (mute)'},
       {id:'vacuum_cleaner', icon:'🤖', name:'Пылесос',                 desc:'vacuum — управление уборкой'},
       {id:'valve',          icon:'🚰', name:'Кран',                    desc:'valve, switch — открытие и закрытие'},
       {id:'cover',          icon:'🔲', name:'Рулонные шторы / жалюзи', desc:'cover — открытие, закрытие, позиционирование'},
@@ -639,7 +642,7 @@ function clearSP(key){delete wData[key];delete wData[key+'_name'];delete wData[k
 // ═══════════════════════════════════════════════════════════
 function renderStep3(){
   let defName='',defRoom='';
-  if(wType==='relay'||wType==='socket'||wType==='scenario_button'||wType==='hvac_ac'||wType==='vacuum_cleaner'||wType==='valve'||wType==='light'||wType==='cover'||wType==='water_leak'||wType==='humidifier'||wType==='smoke'||wType==='kettle'){defName=wData.entity_name||'';defRoom=wData.entity_area||'';}
+  if(wType==='relay'||wType==='socket'||wType==='scenario_button'||wType==='hvac_ac'||wType==='vacuum_cleaner'||wType==='valve'||wType==='light'||wType==='cover'||wType==='water_leak'||wType==='humidifier'||wType==='smoke'||wType==='kettle'||wType==='tv'){defName=wData.entity_name||'';defRoom=wData.entity_area||'';}
   else{defName=wData.temperature_entity_name||wData.humidity_entity_name||'';defRoom=wData.temperature_entity_area||wData.humidity_entity_area||'';}
   return `<div class="fg"><label>Имя <span style="color:var(--danger)">*</span></label>
     <input type="text" id="dName" value="${esc(wData.name||defName)}" oninput="autoId()" placeholder="Свет в гостиной"/>
@@ -690,6 +693,14 @@ async function submitDevice(){
     if(wData.off_mode) attrs.off_mode=wData.off_mode;
     if(wData.boil_mode)attrs.boil_mode=wData.boil_mode;
     if(wData.heat_mode)attrs.heat_mode=wData.heat_mode;
+  }
+  else if(wType==='tv'){
+    attrs.entity_id=wData.entity_id;attrs.entity_name=wData.entity_name||'';
+    // Возможности сущности — по ним на сервере формируется набор функций ТВ в Сбере
+    const f=wData.tv_features||{};
+    for(const k of ['supports_volume_set','supports_mute','supports_volume_step']){
+      if(k in f)attrs[k]=!!f[k];
+    }
   }
   else if(wType==='humidifier'){
     attrs.entity_id=wData.entity_id;attrs.entity_name=wData.entity_name||'';
@@ -1558,3 +1569,53 @@ function pickKettleEntity(eid,name,area){
 
 
 
+
+
+// ═══════════════════════════════════════════════════════════
+// WIZARD: ТЕЛЕВИЗОР
+// ═══════════════════════════════════════════════════════════
+let haTV=[];
+async function fetchTV(){
+  if(haTV.length)return;
+  try{haTV=(await api('/api/sber_mqtt/ha_entities/tv')).entities||[];}
+  catch(e){toast('Ошибка загрузки телевизоров','err');}
+}
+
+function tvFeatureBadges(f){
+  f=f||{};
+  const parts=[];
+  if(f.supports_mute)parts.push('🔇 mute');
+  if(f.supports_volume_set)parts.push('🔊 громкость');
+  if(f.supports_volume_step)parts.push('➕➖ громче/тише');
+  return parts.length?parts.join(' · '):'только вкл/выкл';
+}
+
+function renderStep2TV(){
+  const sel=wData.entity_id;
+  return `<div class="fg" style="margin-bottom:10px"><label>Выберите телевизор (media_player):</label>
+    <div style="font-size:11px;color:var(--muted);margin-top:3px">Доступны включение/выключение; громкость и mute — если их поддерживает сущность</div></div>
+    <div class="picker">
+      <div class="psearch"><span style="color:var(--muted)">🔍</span>
+        <input type="text" placeholder="Поиск…" value="${esc(sFilter)}"
+          oninput="sFilter=this.value;document.getElementById('tvlist').innerHTML=tvItems()"/>
+        <button class="clr" onclick="sFilter='';document.getElementById('tvlist').innerHTML=tvItems()">✕</button>
+      </div>
+      <div class="p-head"><div>Домен</div><div>Комната</div><div>Имя</div><div>Entity ID</div></div>
+      <div class="p-list" id="tvlist">${tvItems()}</div>
+    </div>
+    ${sel?`<div style="margin-top:10px;padding:8px 12px;background:var(--primary-lt);border-radius:7px;font-size:12px;color:var(--primary-dk)">✓ Выбрано: <b>${esc(sel)}</b><br>Функции в Салюте: вкл/выкл · ${esc(tvFeatureBadges(wData.tv_features))}</div>`:''}`;
+}
+function tvItems(){
+  const list=haTV.filter(e=>!sFilter||(e.area+e.domain+e.entity_id+e.friendly_name).toLowerCase().includes(sFilter.toLowerCase()));
+  if(!list.length)return`<div class="p-empty">Нет подходящих сущностей</div>`;
+  return list.map(e=>`<div class="p-item ${wData.entity_id===e.entity_id?'sel':''} ${usedCls(e.entity_id)}" onclick="pickTVEntity('${esc(e.entity_id)}')">
+    <span class="dom-badge">${esc(e.domain)}</span><span class="p-area">${esc(e.area||'—')}</span>
+    <span class="p-name">${esc(e.friendly_name)}${usedBadge(e.entity_id)}</span><span class="p-eid">${esc(e.entity_id)}</span></div>`).join('');
+}
+function pickTVEntity(eid){
+  const e=haTV.find(x=>x.entity_id===eid);
+  if(!e)return;
+  wData.entity_id=e.entity_id;wData.entity_name=e.friendly_name;wData.entity_area=e.area;
+  wData.tv_features=e.tv_features||{};
+  document.getElementById('wizContent').innerHTML=renderStep2TV();
+}
