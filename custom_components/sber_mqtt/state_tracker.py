@@ -35,6 +35,7 @@ from .const import (
     DEVICE_TYPE_SMOKE,
     DEVICE_TYPE_KETTLE,
     DEVICE_TYPE_TV,
+    DEVICE_TYPE_AIR_PURIFIER,
     RELAY_STATEFUL_DOMAINS,
     RELAY_BUTTON_DOMAINS,
     SCENARIO_BUTTON_STATEFUL_DOMAINS,
@@ -191,6 +192,10 @@ class StateTracker:
                 if entity_id:
                     watched.add(entity_id)
 
+            elif device_type == DEVICE_TYPE_AIR_PURIFIER:
+                from .air_purifier import watched_entities
+                watched.update(watched_entities(attrs))
+
         if not watched:
             _LOGGER.debug("Нет сущностей для отслеживания")
             return
@@ -297,6 +302,12 @@ class StateTracker:
             # Без дедупликации по last_state: меняются не только on/off,
             # но и громкость / mute — каждое изменение атрибутов нужно отправить.
             watched = {attrs.get("entity_id", "")}
+
+        elif device_type == DEVICE_TYPE_AIR_PURIFIER:
+            # Состояние собирается из нескольких сущностей (питание, скорость,
+            # режимы, ресурс фильтра, доступность) — следим за всеми
+            from .air_purifier import watched_entities
+            watched = watched_entities(attrs)
 
         else:
             return

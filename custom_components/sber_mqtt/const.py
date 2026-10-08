@@ -44,6 +44,7 @@ DEVICE_TYPE_SOCKET          = "socket"           # Розетка с энерг�
 DEVICE_TYPE_SMOKE           = "smoke"            # Датчик дыма
 DEVICE_TYPE_KETTLE          = "kettle"           # Чайник
 DEVICE_TYPE_TV              = "tv"               # Телевизор (media_player)
+DEVICE_TYPE_AIR_PURIFIER    = "air_purifier"     # Очиститель воздуха (набор сущностей HA)
 
 # Маппинг скоростей вентилятора Сбер → HA (humidifier mode)
 # Сбер: auto | low | medium | high | turbo | quiet
@@ -125,6 +126,7 @@ SUPPORTED_DEVICE_TYPES = {
     DEVICE_TYPE_SMOKE:           "Датчик дыма",
     DEVICE_TYPE_KETTLE:          "Чайник",
     DEVICE_TYPE_TV:              "Телевизор",
+    DEVICE_TYPE_AIR_PURIFIER:    "Очиститель воздуха",
 }
 
 # ── Домены HA для типа "реле" ─────────────────────────────────────────────
@@ -319,3 +321,48 @@ TV_VOLUME_FALLBACK_STEP = 0.05
 # Значения команды volume от Сбера → направление
 SBER_TV_VOLUME_UP   = {"+", "up", "volume_up", "louder"}
 SBER_TV_VOLUME_DOWN = {"-", "down", "volume_down", "quieter"}
+
+# ── Очиститель воздуха (hvac_air_purifier) ────────────────────────────────
+# В HA очиститель — это не одна сущность, а набор switch / select / sensor.
+# Пользователь сопоставляет их функциям Сбера в мастере добавления.
+#
+# Обязательные функции Сбера: online, on_off.
+# Поддерживаются: hvac_air_flow_power, hvac_night_mode, hvac_ionization,
+#   hvac_aromatization, hvac_decontaminate, hvac_replace_filter, hvac_replace_ionizator.
+#
+# Атрибуты устройства (device["attributes"]):
+#   entity_id                    — включение/выключение (switch / input_boolean / fan)
+#   speed_entity + speed_map     — скорость вентилятора: select/input_select и
+#                                  словарь {значение Сбера: опция select}
+#   <name>_entity                — булевые режимы (night_mode, ionization, aromatization,
+#   <name>_on_option/_off_option   decontaminate): switch/input_boolean либо select
+#                                  (тогда нужны опции «включено» / «выключено»)
+#   replace_filter_entity,       — «нужно менять»: binary_sensor либо числовой sensor
+#   replace_ionizator_entity       (+ <name>_threshold и <name>_cmp: "le" — меньше или равно,
+#   + _threshold, _cmp             "ge" — больше или равно)
+#   online_entity                — binary_sensor доступности (опционально)
+AIR_PURIFIER_SPEED_VALUES = ["auto", "quiet", "low", "medium", "high", "turbo"]
+
+# имя слота → функция Сбера (управляемые BOOL-режимы)
+AIR_PURIFIER_BOOL_FEATURES: dict[str, str] = {
+    "night_mode":    "hvac_night_mode",
+    "ionization":    "hvac_ionization",
+    "aromatization": "hvac_aromatization",
+    "decontaminate": "hvac_decontaminate",
+}
+# имя слота → функция Сбера (только состояние, менять нельзя)
+AIR_PURIFIER_REPLACE_FEATURES: dict[str, str] = {
+    "replace_filter":    "hvac_replace_filter",
+    "replace_ionizator": "hvac_replace_ionizator",
+}
+
+AIR_PURIFIER_POWER_DOMAINS  = {"switch", "input_boolean", "fan"}
+AIR_PURIFIER_SELECT_DOMAINS = {"select", "input_select"}
+AIR_PURIFIER_SWITCH_DOMAINS = {"switch", "input_boolean"}
+
+# Все ключи атрибутов, содержащие entity_id (для подписки на изменения)
+AIR_PURIFIER_ENTITY_KEYS = (
+    "entity_id", "speed_entity", "online_entity",
+    *(f"{n}_entity" for n in AIR_PURIFIER_BOOL_FEATURES),
+    *(f"{n}_entity" for n in AIR_PURIFIER_REPLACE_FEATURES),
+)

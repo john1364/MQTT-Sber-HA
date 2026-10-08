@@ -53,6 +53,8 @@ class HACommandHandler:
             await self._handle_kettle_command(device, states)
         elif device_type == "tv":
             await self._handle_tv_command(device, states)
+        elif device_type == "air_purifier":
+            await self._handle_air_purifier_command(device, states)
         elif device_type == "vacuum_cleaner":
             await self._handle_vacuum_command(device, states)
         elif device_type == "valve":
@@ -707,6 +709,86 @@ class HACommandHandler:
 
             else:
                 _LOGGER.debug("ТВ %s: команда '%s' не поддерживается, пропущена", dev_id, key)
+
+    async def _handle_air_purifier_command(self, device: dict, states: list) -> None:
+        """Обрабатывает команды управления очистителем воздуха от Сбера.
+
+        Очиститель в HA — набор отдельных сущностей, поэтому каждая функция
+        Сбера управляет «своей» сущностью, выбранной пользователем в мастере.
+
+        Поддерживаемые команды:
+          on_off              — <domain>.turn_on / turn_off для сущности питания
+          hvac_air_flow_power — скорость → select.select_option (по speed_map)
+          hvac_night_mode, hvac_ionization, hvac_aromatization, hvac_decontaminate
+                              — switch/input_boolean: turn_on/turn_off;
+                                select/input_select: выбор опции «вкл» / «выкл»
+        hvac_replace_filter и hvac_replace_ionizator — только состояние, команды игнорируются.
+        """
+        from .air_purifier import clean_speed_map, domain_of
+        from .const import AIR_PURIFIER_BOOL_FEATURES, AIR_PURIFIER_SELECT_DOMAINS
+
+        attrs  = device.get("attributes", {})
+        dev_id = device.get("id")
+        sber_to_name = {v: k for k, v in AIR_PURIFIER_BOOL_FEATURES.items()}
+
+        async def _call(domain: str, service: str, data: dict) -> None:
+            self._track_ha_command(device, states, domain, service, data)
+            await self._hass.services.async_call(domain, service, data, blocking=False)
+
+        for state in states:
+            key     = state.get("key")
+            val_obj = state.get("value", {}) or {}
+
+            if key == "on_off":
+                entity_id = attrs.get("entity_id", "")
+                if not entity_id:
+                    _LOGGER.error("Очиститель %s: не задан entity_id питания", dev_id)
+                    continue
+                is_on   = _parse_bool(val_obj)
+                service = "turn_on" if is_on else "turn_off"
+                domain  = domain_of(entity_id)
+                _LOGGER.info("Очиститель %s: on_off=%s → %s.%s", dev_id, is_on, domain, service)
+                await _call(domain, service, {"entity_id": entity_id})
+
+            elif key == "hvac_air_flow_power":
+                entity_id = attrs.get("speed_entity", "")
+                sber_val  = str(val_obj.get("enum_value", "")).strip().lower()
+                option    = clean_speed_map(attrs).get(sber_val)
+                if not entity_id or not option:
+                    _LOGGER.warning(
+                        "Очиститель %s: скорость '%s' не сопоставлена с опцией select",
+                        dev_id, sber_val,
+                    )
+                    continue
+                domain = domain_of(entity_id)
+                _LOGGER.info("Очиститель %s: скорость %s → %s.select_option(%s)", dev_id, sber_val, domain, option)
+                await _call(domain, "select_option", {"entity_id": entity_id, "option": option})
+
+            elif key in sber_to_name:
+                name      = sber_to_name[key]
+                entity_id = attrs.get(f"{name}_entity", "")
+                if not entity_id:
+                    _LOGGER.warning("Очиститель %s: для %s не выбрана сущность", dev_id, key)
+                    continue
+                is_on  = _parse_bool(val_obj)
+                domain = domain_of(entity_id)
+                if domain in AIR_PURIFIER_SELECT_DOMAINS:
+                    option = attrs.get(f"{name}_on_option" if is_on else f"{name}_off_option")
+                    if not option:
+                        _LOGGER.warning(
+                            "Очиститель %s: %s=%s — не задана опция select для этого значения",
+                            dev_id, key, is_on,
+                        )
+                        continue
+                    _LOGGER.info("Очиститель %s: %s=%s → %s.select_option(%s)", dev_id, key, is_on, domain, option)
+                    await _call(domain, "select_option", {"entity_id": entity_id, "option": option})
+                else:
+                    service = "turn_on" if is_on else "turn_off"
+                    _LOGGER.info("Очиститель %s: %s=%s → %s.%s", dev_id, key, is_on, domain, service)
+                    await _call(domain, service, {"entity_id": entity_id})
+
+            else:
+                _LOGGER.debug("Очиститель %s: команда '%s' не поддерживается, пропущена", dev_id, key)
 
     async def _handle_humidifier_command(self, device: dict, states: list) -> None:
         """Обрабатывает команды управления увлажнителем от Сбера.

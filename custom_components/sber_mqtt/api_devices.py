@@ -24,6 +24,7 @@ from .const import (
     DEVICE_TYPE_SMOKE,
     DEVICE_TYPE_KETTLE,
     DEVICE_TYPE_TV,
+    DEVICE_TYPE_AIR_PURIFIER,
     SUPPORTED_DEVICE_TYPES,
 )
 from .api_common import _get_entry_data, _slugify
@@ -282,6 +283,10 @@ class SberDevicesView(HomeAssistantView):
                 }
             for flag_name, flag_val in flags.items():
                 attrs.setdefault(flag_name, flag_val)
+        elif device_type == DEVICE_TYPE_AIR_PURIFIER:
+            error = _validate_air_purifier_attrs(attrs)
+            if error:
+                return web.json_response({"error": error}, status=400)
 
         # Формируем запись устройства
         device_entry = {
@@ -515,3 +520,79 @@ class SberPanelView(HomeAssistantView):
         html = html.replace("</head>", inject + "</head>", 1)
 
         return web.Response(text=html, content_type="text/html")
+
+
+def _validate_air_purifier_attrs(attrs: dict) -> str | None:
+    """Проверяет и нормализует (на месте) настройки очистителя воздуха.
+
+    Возвращает текст ошибки или None. Пустые значения удаляются, чтобы
+    незаполненный слот не считался заданным.
+    """
+    from .const import (
+        AIR_PURIFIER_BOOL_FEATURES,
+        AIR_PURIFIER_POWER_DOMAINS,
+        AIR_PURIFIER_REPLACE_FEATURES,
+        AIR_PURIFIER_SELECT_DOMAINS,
+        AIR_PURIFIER_SPEED_VALUES,
+    )
+
+    def _domain(eid: str) -> str:
+        return eid.split(".", 1)[0] if eid else ""
+
+    power = attrs.get("entity_id", "")
+    if not power:
+        return "attributes.entity_id is required for air_purifier"
+    if _domain(power) not in AIR_PURIFIER_POWER_DOMAINS:
+        return "air_purifier power entity must be switch, input_boolean or fan"
+
+    # Скорость вентилятора: select + сопоставление значений Сбера опциям select
+    if attrs.get("speed_entity"):
+        if _domain(attrs["speed_entity"]) not in AIR_PURIFIER_SELECT_DOMAINS:
+            return "speed_entity must be select or input_select"
+        raw = attrs.get("speed_map")
+        raw = raw if isinstance(raw, dict) else {}
+        smap = {
+            k: str(v) for k, v in raw.items()
+            if k in AIR_PURIFIER_SPEED_VALUES and v not in (None, "")
+        }
+        if not smap:
+            return "speed_map must map at least one Sber speed to a select option"
+        attrs["speed_map"] = smap
+    else:
+        attrs.pop("speed_entity", None)
+        attrs.pop("speed_map", None)
+
+    # Булевые режимы: switch/input_boolean либо select с опциями «вкл» / «выкл»
+    for name in AIR_PURIFIER_BOOL_FEATURES:
+        eid = attrs.get(f"{name}_entity")
+        if not eid:
+            for suffix in ("entity", "on_option", "off_option"):
+                attrs.pop(f"{name}_{suffix}", None)
+            continue
+        if _domain(eid) in AIR_PURIFIER_SELECT_DOMAINS:
+            if not attrs.get(f"{name}_on_option") or not attrs.get(f"{name}_off_option"):
+                return f"{name}: on_option and off_option are required for select entity"
+        else:
+            attrs.pop(f"{name}_on_option", None)
+            attrs.pop(f"{name}_off_option", None)
+
+    # «Нужно менять»: binary_sensor либо числовой sensor с порогом
+    for name in AIR_PURIFIER_REPLACE_FEATURES:
+        eid = attrs.get(f"{name}_entity")
+        if not eid:
+            for suffix in ("entity", "threshold", "cmp"):
+                attrs.pop(f"{name}_{suffix}", None)
+            continue
+        if _domain(eid) == "sensor":
+            try:
+                attrs[f"{name}_threshold"] = float(attrs.get(f"{name}_threshold"))
+            except (ValueError, TypeError):
+                return f"{name}: numeric threshold is required for sensor entity"
+            attrs[f"{name}_cmp"] = "ge" if attrs.get(f"{name}_cmp") == "ge" else "le"
+        else:
+            attrs.pop(f"{name}_threshold", None)
+            attrs.pop(f"{name}_cmp", None)
+
+    if not attrs.get("online_entity"):
+        attrs.pop("online_entity", None)
+    return None

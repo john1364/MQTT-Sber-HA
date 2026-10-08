@@ -73,6 +73,7 @@ from .const import (
     DEVICE_TYPE_SMOKE,
     DEVICE_TYPE_KETTLE,
     DEVICE_TYPE_TV,
+    DEVICE_TYPE_AIR_PURIFIER,
     HA_HVAC_MODE_TO_SBER,
     HA_MODE_TO_SBER_AIR_FLOW,
     SIGNAL_STRENGTH_LOW_THRESHOLD,
@@ -159,6 +160,8 @@ class SberSerializer:
             return self._kettle_config(device_id, device)
         if device_type == DEVICE_TYPE_TV:
             return self._tv_config(device_id, device)
+        if device_type == DEVICE_TYPE_AIR_PURIFIER:
+            return self._air_purifier_config(device_id, device)
         _LOGGER.warning("Неизвестный тип устройства: %s", device_type)
         return None
 
@@ -621,6 +624,51 @@ class SberSerializer:
                 "volume_int": {
                     "type": "INTEGER",
                     "integer_values": {"min": "0", "max": "100", "step": "1"},
+                }
+            }
+
+        entry = {
+            "id":         device_id,
+            "name":       device.get("name", device_id),
+            "hw_version": HW_VERSION,
+            "sw_version": SW_VERSION,
+            "model":      model,
+            "model_id":   "",
+        }
+        if device.get("room"):
+            entry["room"] = device["room"]
+        return entry
+
+    def _air_purifier_config(self, device_id: str, device: dict) -> dict:
+        """Конфиг для очистителя воздуха (hvac_air_purifier).
+
+        Обязательные функции: online, on_off.
+        Остальные объявляются только если пользователь сопоставил им сущность HA:
+          hvac_air_flow_power, hvac_night_mode, hvac_ionization, hvac_aromatization,
+          hvac_decontaminate, hvac_replace_filter, hvac_replace_ionizator.
+        Для скорости вентилятора в allowed_values передаются только те значения,
+        которые сопоставлены с опциями select.
+        """
+        from .air_purifier import declared_features, clean_speed_map
+        from .const import AIR_PURIFIER_SPEED_VALUES
+
+        attrs    = device.get("attributes", {})
+        features = declared_features(attrs)
+
+        model: dict = {
+            "id":           "ID_air_purifier",
+            "manufacturer": MANUFACTURER,
+            "model":        "Model_air_purifier",
+            "category":     "hvac_air_purifier",
+            "features":     features,
+        }
+        if "hvac_air_flow_power" in features:
+            smap = clean_speed_map(attrs)
+            values = [v for v in AIR_PURIFIER_SPEED_VALUES if v in smap]
+            model["allowed_values"] = {
+                "hvac_air_flow_power": {
+                    "type": "ENUM",
+                    "enum_values": {"values": values},
                 }
             }
 
@@ -1152,6 +1200,36 @@ class SberSerializer:
                 })
             except (ValueError, TypeError):
                 pass
+        return json.dumps({"devices": {device_id: {"states": states}}}, ensure_ascii=False)
+
+    def build_air_purifier_state_payload(
+        self,
+        device_id: str,
+        is_on: bool,
+        online: bool = True,
+        air_flow_power: str | None = None,
+        bool_states: dict[str, bool] | None = None,
+    ) -> str:
+        """Состояние очистителя воздуха.
+
+        is_on          — включён/выключен (on_off)
+        online         — доступность (online)
+        air_flow_power — скорость в терминах Сбера (hvac_air_flow_power); None — не передавать
+        bool_states    — {ключ функции Сбера: bool}: hvac_night_mode, hvac_ionization,
+                         hvac_aromatization, hvac_decontaminate, hvac_replace_filter,
+                         hvac_replace_ionizator (только те, по которым есть данные)
+        """
+        states: list[dict] = [
+            {"key": "online", "value": {"type": "BOOL", "bool_value": bool(online)}},
+            {"key": "on_off", "value": {"type": "BOOL", "bool_value": is_on}},
+        ]
+        if air_flow_power:
+            states.append({
+                "key": "hvac_air_flow_power",
+                "value": {"type": "ENUM", "enum_value": air_flow_power},
+            })
+        for key, value in (bool_states or {}).items():
+            states.append({"key": key, "value": {"type": "BOOL", "bool_value": bool(value)}})
         return json.dumps({"devices": {device_id: {"states": states}}}, ensure_ascii=False)
 
     def build_humidifier_state_payload(

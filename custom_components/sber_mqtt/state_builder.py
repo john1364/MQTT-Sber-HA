@@ -29,7 +29,10 @@ from .const import (
     DEVICE_TYPE_SMOKE,
     DEVICE_TYPE_KETTLE,
     DEVICE_TYPE_TV,
+    DEVICE_TYPE_AIR_PURIFIER,
     TV_OFF_STATES,
+    AIR_PURIFIER_BOOL_FEATURES,
+    AIR_PURIFIER_REPLACE_FEATURES,
 )
 
 if TYPE_CHECKING:
@@ -342,6 +345,32 @@ def build_current_state_payload(
                 muted = raw_muted
 
         return serializer.build_tv_state_payload(device_id, is_on, volume, muted)
+
+    # ── Очиститель воздуха ───────────────────────────────────────────────
+    if device_type == DEVICE_TYPE_AIR_PURIFIER:
+        from . import air_purifier as ap
+
+        if not hass.states.get(attrs.get("entity_id", "")):
+            return None
+
+        # Только те функции, которым сопоставлена сущность (как в конфиге модели)
+        bool_states: dict[str, bool] = {}
+        for name, sber_key in AIR_PURIFIER_BOOL_FEATURES.items():
+            value = ap.bool_feature_state(hass, attrs, name)
+            if value is not None:
+                bool_states[sber_key] = value
+        for name, sber_key in AIR_PURIFIER_REPLACE_FEATURES.items():
+            value = ap.replace_state(hass, attrs, name)
+            if value is not None:
+                bool_states[sber_key] = value
+
+        return serializer.build_air_purifier_state_payload(
+            device_id,
+            is_on=ap.power_state(hass, attrs),
+            online=ap.online_state(hass, attrs),
+            air_flow_power=ap.speed_state(hass, attrs),
+            bool_states=bool_states,
+        )
 
     # ── Увлажнитель воздуха ──────────────────────────────────────────────
     if device_type == "humidifier":

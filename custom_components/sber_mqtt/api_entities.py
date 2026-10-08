@@ -335,3 +335,61 @@ class SberHAEntitiesTVView(HomeAssistantView):
 
         entities = get_ha_entities(hass, "media_player", extra_fields={"tv_features": _flags})
         return web.json_response({"entities": entities})
+
+
+# ── GET /api/sber_mqtt/ha_entities/air_purifier ─────────────────────────────
+
+class SberHAEntitiesAirPurifierView(HomeAssistantView):
+    """Кандидаты для привязки к очистителю воздуха.
+
+    Очиститель в HA — набор сущностей, поэтому возвращаем три списка:
+      power    — switch / input_boolean / fan   (включение и выключение)
+      controls — switch / input_boolean / select / input_select
+                 (скорость и режимы; у select есть список options)
+      sensors  — sensor / binary_sensor
+                 (замена фильтра / ионизатора, доступность; с unit и device_class)
+    У каждой сущности есть device_id — по нему мастер подбирает остальные
+    сущности того же физического устройства.
+    """
+
+    url  = "/api/sber_mqtt/ha_entities/air_purifier"
+    name = "api:sber_mqtt:ha_entities_air_purifier"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        pass
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+
+        def _options(s, e):
+            if not s:
+                return []
+            opts = s.attributes.get("options")
+            return list(opts) if isinstance(opts, (list, tuple)) else []
+
+        def _unit(s, e):
+            return (s.attributes.get("unit_of_measurement") or "") if s else ""
+
+        def _state(s, e):
+            return s.state if s else ""
+
+        def _dc(s, e):
+            return (
+                e.original_device_class
+                or e.device_class
+                or (s.attributes.get("device_class", "") if s else "")
+                or ""
+            )
+
+        return web.json_response({
+            "power": get_ha_entities(hass, ["switch", "input_boolean", "fan"]),
+            "controls": get_ha_entities(
+                hass, ["switch", "input_boolean", "select", "input_select"],
+                extra_fields={"options": _options},
+            ),
+            "sensors": get_ha_entities(
+                hass, ["sensor", "binary_sensor"],
+                extra_fields={"unit": _unit, "dc": _dc, "state": _state},
+            ),
+        })

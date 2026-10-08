@@ -26,7 +26,7 @@ async function api(url, opts={}) {
 // ═══════════════════════════════════════════════════════════
 // КОНФИГУРАЦИЯ И СОСТОЯНИЕ
 // ═══════════════════════════════════════════════════════════
-const TYPE_LABELS = { relay:'Реле', sensor_temp:'Датчик температуры/влажности', scenario_button:'Сценарная кнопка', hvac_ac:'Кондиционер', vacuum_cleaner:'Пылесос', valve:'Кран', light:'Лампа', cover:'Рулонные шторы / жалюзи', water_leak:'Датчик протечки', humidifier:'Увлажнитель воздуха', socket:'Розетка', smoke:'Датчик дыма', kettle:'Чайник', tv:'Телевизор' };
+const TYPE_LABELS = { relay:'Реле', sensor_temp:'Датчик температуры/влажности', scenario_button:'Сценарная кнопка', hvac_ac:'Кондиционер', vacuum_cleaner:'Пылесос', valve:'Кран', light:'Лампа', cover:'Рулонные шторы / жалюзи', water_leak:'Датчик протечки', humidifier:'Увлажнитель воздуха', socket:'Розетка', smoke:'Датчик дыма', kettle:'Чайник', tv:'Телевизор', air_purifier:'Очиститель воздуха' };
 const STEPS = {
   relay:           ['Тип устройства','Источник в HA','Параметры'],
   sensor_temp:     ['Тип устройства','Датчики в HA','Параметры'],
@@ -40,6 +40,7 @@ const STEPS = {
   smoke:           ['Тип устройства','Датчик в HA','Параметры'],
   kettle:          ['Тип устройства','Источник в HA','Параметры'],
   tv:              ['Тип устройства','Источник в HA','Параметры'],
+  air_purifier:    ['Тип устройства','Функции и сущности HA','Параметры'],
   humidifier:      ['Тип устройства','Источник в HA','Параметры'],
   socket:          ['Тип устройства','Источник в HA','Параметры'],
 };
@@ -53,7 +54,9 @@ function refreshUsedEntities(){
   usedEntities=new Set();
   const attrKeys=['entity_id','power_entity','current_entity','voltage_entity',
     'temperature_entity','humidity_entity','battery_entity',
-    'water_percentage_entity','replace_filter_entity','alarm_mute_entity'];
+    'water_percentage_entity','replace_filter_entity','alarm_mute_entity',
+    'speed_entity','night_mode_entity','ionization_entity','aromatization_entity',
+    'decontaminate_entity','replace_ionizator_entity','online_entity'];
   for(const d of devices){
     for(const k of attrKeys){
       const v=d.attributes?.[k];
@@ -283,7 +286,7 @@ function openWizard(){
 function closeWizard(){
   document.getElementById('wiz').style.display='none';
   // Полный сброс состояния чтобы следующее открытие начиналось чисто
-  wStep=1;wType=null;wData={};sFilter='';spField=null;haRelay=[];haSensors=[];haClimate=[];haVacuum=[];haValve=[];haLight=[];haCover=[];haWaterLeak=[];haHumidifier=[];haSmoke=[];haKettle=[];haNumber=[];haTV=[];
+  wStep=1;wType=null;wData={};sFilter='';spField=null;haRelay=[];haSensors=[];haClimate=[];haVacuum=[];haValve=[];haLight=[];haCover=[];haWaterLeak=[];haHumidifier=[];haSmoke=[];haKettle=[];haNumber=[];haTV=[];haAP={power:[],controls:[],sensors:[]};
   const btn=document.getElementById('btnNext');
   if(btn){btn.disabled=false;btn.textContent='Далее →';}
 }
@@ -294,7 +297,7 @@ async function wizNext(){
   if(wStep<total){
     wStep++;
     // Загружаем список сущностей при переходе на шаг 2 (если ещё не загружены)
-    if(wStep===2){if(wType==='relay')await Promise.all([fetchRelay(),fetchSensors()]);if(wType==='sensor_temp')await fetchSensors();if(wType==='scenario_button')await fetchRelay();if(wType==='hvac_ac')await Promise.all([fetchClimate(),fetchSensors(),fetchSocket()]);if(wType==='vacuum_cleaner')await Promise.all([fetchVacuum(),fetchSensors()]);if(wType==='valve')await fetchValve();if(wType==='light')await fetchLight();if(wType==='cover')await Promise.all([fetchCover(),fetchSensors()]);if(wType==='water_leak')await Promise.all([fetchWaterLeak(),fetchSensors()]);if(wType==='humidifier')await Promise.all([fetchHumidifier(),fetchSensors()]);if(wType==='socket')await Promise.all([fetchSocket(),fetchSensors()]);if(wType==='smoke')await Promise.all([fetchSmoke(),fetchSensors()]);if(wType==='kettle')await fetchKettle();if(wType==='tv')await fetchTV();}
+    if(wStep===2){if(wType==='relay')await Promise.all([fetchRelay(),fetchSensors()]);if(wType==='sensor_temp')await fetchSensors();if(wType==='scenario_button')await fetchRelay();if(wType==='hvac_ac')await Promise.all([fetchClimate(),fetchSensors(),fetchSocket()]);if(wType==='vacuum_cleaner')await Promise.all([fetchVacuum(),fetchSensors()]);if(wType==='valve')await fetchValve();if(wType==='light')await fetchLight();if(wType==='cover')await Promise.all([fetchCover(),fetchSensors()]);if(wType==='water_leak')await Promise.all([fetchWaterLeak(),fetchSensors()]);if(wType==='humidifier')await Promise.all([fetchHumidifier(),fetchSensors()]);if(wType==='socket')await Promise.all([fetchSocket(),fetchSensors()]);if(wType==='smoke')await Promise.all([fetchSmoke(),fetchSensors()]);if(wType==='kettle')await fetchKettle();if(wType==='tv')await fetchTV();if(wType==='air_purifier')await fetchAP();}
     renderWiz();
   }else{
     await submitDevice();
@@ -327,6 +330,7 @@ async function wizValidate(){
       if(!wData.boil_mode){toast('Укажите режим для команды «Вскипятить»','err');return false;}
     }
     if(wType==='tv'&&!wData.entity_id){toast('Выберите телевизор (media_player)','err');return false;}
+    if(wType==='air_purifier'){const e=apValidate();if(e){toast(e,'err');return false;}}
     if(wType==='humidifier'&&!wData.entity_id){toast('Выберите увлажнитель','err');return false;}
     if(wType==='sensor_temp'&&!wData.temperature_entity&&!wData.humidity_entity){toast('Выберите температуру или влажность','err');return false;}
   }
@@ -360,7 +364,7 @@ function renderWiz(){
   }).join('');
   const c=document.getElementById('wizContent');
   if(wStep===1)c.innerHTML=renderStep1();
-  else if(wStep===2){if(wType==='relay')c.innerHTML=renderStep2Relay();else if(wType==='scenario_button')c.innerHTML=renderStep2ScenarioButton();else if(wType==='hvac_ac')c.innerHTML=renderStep2HvacAc();else if(wType==='vacuum_cleaner')c.innerHTML=renderStep2Vacuum();else if(wType==='valve')c.innerHTML=renderStep2Valve();else if(wType==='light')c.innerHTML=renderStep2Light();else if(wType==='cover')c.innerHTML=renderStep2Cover();else if(wType==='water_leak')c.innerHTML=renderStep2WaterLeak();else if(wType==='humidifier')c.innerHTML=renderStep2Humidifier();else if(wType==='socket')c.innerHTML=renderStep2Socket();else if(wType==='smoke')c.innerHTML=renderStep2Smoke();else if(wType==='kettle')c.innerHTML=renderStep2Kettle();else if(wType==='tv')c.innerHTML=renderStep2TV();else c.innerHTML=renderStep2Sensor();}
+  else if(wStep===2){if(wType==='relay')c.innerHTML=renderStep2Relay();else if(wType==='scenario_button')c.innerHTML=renderStep2ScenarioButton();else if(wType==='hvac_ac')c.innerHTML=renderStep2HvacAc();else if(wType==='vacuum_cleaner')c.innerHTML=renderStep2Vacuum();else if(wType==='valve')c.innerHTML=renderStep2Valve();else if(wType==='light')c.innerHTML=renderStep2Light();else if(wType==='cover')c.innerHTML=renderStep2Cover();else if(wType==='water_leak')c.innerHTML=renderStep2WaterLeak();else if(wType==='humidifier')c.innerHTML=renderStep2Humidifier();else if(wType==='socket')c.innerHTML=renderStep2Socket();else if(wType==='smoke')c.innerHTML=renderStep2Smoke();else if(wType==='kettle')c.innerHTML=renderStep2Kettle();else if(wType==='tv')c.innerHTML=renderStep2TV();else if(wType==='air_purifier')c.innerHTML=renderStep2AirPurifier();else c.innerHTML=renderStep2Sensor();}
   else c.innerHTML=renderStep3();
 }
 
@@ -374,6 +378,7 @@ function renderStep1(){
       {id:'humidifier',     icon:'💧', name:'Увлажнитель воздуха',     desc:'humidifier — влажность, режим, скорость вентилятора'},
       {id:'kettle',         icon:'☕', name:'Чайник',                  desc:'water_heater — включение, целевая и текущая температура воды'},
       {id:'tv',             icon:'📺', name:'Телевизор',               desc:'media_player — включение, громкость и отключение звука (mute)'},
+      {id:'air_purifier',   icon:'🌬️', name:'Очиститель воздуха',      desc:'switch + select + sensor — вкл/выкл, скорость, режимы, замена фильтра'},
       {id:'vacuum_cleaner', icon:'🤖', name:'Пылесос',                 desc:'vacuum — управление уборкой'},
       {id:'valve',          icon:'🚰', name:'Кран',                    desc:'valve, switch — открытие и закрытие'},
       {id:'cover',          icon:'🔲', name:'Рулонные шторы / жалюзи', desc:'cover — открытие, закрытие, позиционирование'},
@@ -642,7 +647,7 @@ function clearSP(key){delete wData[key];delete wData[key+'_name'];delete wData[k
 // ═══════════════════════════════════════════════════════════
 function renderStep3(){
   let defName='',defRoom='';
-  if(wType==='relay'||wType==='socket'||wType==='scenario_button'||wType==='hvac_ac'||wType==='vacuum_cleaner'||wType==='valve'||wType==='light'||wType==='cover'||wType==='water_leak'||wType==='humidifier'||wType==='smoke'||wType==='kettle'||wType==='tv'){defName=wData.entity_name||'';defRoom=wData.entity_area||'';}
+  if(wType==='relay'||wType==='socket'||wType==='scenario_button'||wType==='hvac_ac'||wType==='vacuum_cleaner'||wType==='valve'||wType==='light'||wType==='cover'||wType==='water_leak'||wType==='humidifier'||wType==='smoke'||wType==='kettle'||wType==='tv'||wType==='air_purifier'){defName=wData.entity_name||'';defRoom=wData.entity_area||'';}
   else{defName=wData.temperature_entity_name||wData.humidity_entity_name||'';defRoom=wData.temperature_entity_area||wData.humidity_entity_area||'';}
   return `<div class="fg"><label>Имя <span style="color:var(--danger)">*</span></label>
     <input type="text" id="dName" value="${esc(wData.name||defName)}" oninput="autoId()" placeholder="Свет в гостиной"/>
@@ -700,6 +705,14 @@ async function submitDevice(){
     const f=wData.tv_features||{};
     for(const k of ['supports_volume_set','supports_mute','supports_volume_step']){
       if(k in f)attrs[k]=!!f[k];
+    }
+  }
+  else if(wType==='air_purifier'){
+    attrs.entity_id=wData.entity_id;attrs.entity_name=wData.entity_name||'';
+    for(const k of AP_ATTR_KEYS){
+      const v=wData[k];
+      if(v===undefined||v===null||v==='')continue;
+      attrs[k]=(k.endsWith('_threshold'))?Number(v):v;
     }
   }
   else if(wType==='humidifier'){
@@ -1618,4 +1631,303 @@ function pickTVEntity(eid){
   wData.entity_id=e.entity_id;wData.entity_name=e.friendly_name;wData.entity_area=e.area;
   wData.tv_features=e.tv_features||{};
   document.getElementById('wizContent').innerHTML=renderStep2TV();
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// WIZARD: ОЧИСТИТЕЛЬ ВОЗДУХА
+// ═══════════════════════════════════════════════════════════
+// В HA очиститель — набор отдельных сущностей (switch, select, sensor).
+// Пользователь выбирает сущность питания, остальные функции Сбера
+// сопоставляются сущностями того же устройства (подбираются автоматически).
+let haAP={power:[],controls:[],sensors:[]};
+async function fetchAP(){
+  if(haAP.power.length)return;
+  try{haAP=await api('/api/sber_mqtt/ha_entities/air_purifier');}
+  catch(e){toast('Ошибка загрузки сущностей очистителя','err');}
+}
+
+const AP_SELECT_DOMAINS=['select','input_select'];
+const AP_SPEEDS=[
+  {key:'auto',  label:'Авто',    guess:['auto','авто']},
+  {key:'quiet', label:'Тихая',   guess:['quiet','silent','тих','бесшум']},
+  {key:'low',   label:'Низкая',  guess:['low','низк','min']},
+  {key:'medium',label:'Средняя', guess:['medium','mid','средн']},
+  {key:'high',  label:'Высокая', guess:['high','выс','max']},
+  {key:'turbo', label:'Турбо',   guess:['turbo','турбо','boost']},
+];
+const AP_BOOL_SLOTS=[
+  {key:'night_mode',    icon:'🌙', label:'Ночной режим',    re:/night|sleep|ноч|сон/,
+    onG:['sleep','night','сон','ноч'], offG:['auto','авто','normal','standard','off','выкл']},
+  {key:'ionization',    icon:'⚡', label:'Ионизация',       re:/ioniz|иониз|(^|[_\s.])ion($|[_\s])/,
+    onG:['on','вкл','enable'], offG:['off','выкл','disable']},
+  {key:'aromatization', icon:'🌸', label:'Ароматизация',    re:/aroma|fragran|ароматиз/,
+    onG:['on','вкл','enable'], offG:['off','выкл','disable']},
+  {key:'decontaminate', icon:'🧪', label:'Обеззараживание', re:/(^|[_\s.])uv($|[_\s])|ultraviolet|steril|disinfect|decontam|germ|обеззараж|(^|[_\s.])уф($|[_\s])/,
+    onG:['on','вкл','enable'], offG:['off','выкл','disable']},
+];
+const AP_REPLACE_SLOTS=[
+  {key:'replace_filter',    icon:'🔧', label:'Замена фильтра',    re:/filter|фильтр/},
+  {key:'replace_ionizator', icon:'🔧', label:'Замена ионизатора', re:/ioniz|иониз/},
+];
+// Все атрибуты устройства, которые мастер отправляет на сервер
+const AP_ATTR_KEYS=['speed_entity','speed_map','online_entity',
+  ...AP_BOOL_SLOTS.flatMap(s=>[s.key+'_entity',s.key+'_on_option',s.key+'_off_option']),
+  ...AP_REPLACE_SLOTS.flatMap(s=>[s.key+'_entity',s.key+'_threshold',s.key+'_cmp']),
+];
+
+const AP_CARD_STYLE='padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card)';
+const AP_SEL_STYLE='width:100%;box-sizing:border-box;margin-top:6px;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--card);color:var(--text)';
+const AP_SEL_INLINE='width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--card);color:var(--text)';
+
+// ── Поиск и подбор ──────────────────────────────────────────
+function apFind(eid){
+  return haAP.power.find(e=>e.entity_id===eid)||haAP.controls.find(e=>e.entity_id===eid)||haAP.sensors.find(e=>e.entity_id===eid)||null;
+}
+function apDevId(){const e=apFind(wData.entity_id);return e?e.device_id:'';}
+
+// Первое подходящее значение из options: сначала точное совпадение, затем по вхождению
+function apPick(options,guesses,taken){
+  const free=(options||[]).filter(o=>!(taken||[]).includes(o));
+  for(const g of guesses){const h=free.find(o=>String(o).toLowerCase()===g);if(h!==undefined)return h;}
+  for(const g of guesses){const h=free.find(o=>String(o).toLowerCase().includes(g));if(h!==undefined)return h;}
+  return '';
+}
+function apGuessSpeedMap(options){
+  const map={},taken=[];
+  for(const s of AP_SPEEDS){const o=apPick(options,s.guess,taken);map[s.key]=o;if(o)taken.push(o);}
+  return map;
+}
+function apGuessBoolOptions(options,slot){
+  const on=apPick(options,slot.onG,[]);
+  let off=apPick(options,slot.offG,[on]);
+  if(on&&!off)off=(options||[]).find(o=>o!==on)||'';
+  return {on,off};
+}
+function apDefaultThreshold(e){
+  const u=String(e.unit||'').toLowerCase();
+  if(u==='%')return 10;
+  if(['h','hr','hrs','ч','час','hours'].includes(u))return 100;
+  if(['d','д','days','дн'].includes(u))return 5;
+  return '';
+}
+function apInitBool(slot,eid){
+  const k=slot.key;
+  wData[k+'_entity']=eid;delete wData[k+'_on_option'];delete wData[k+'_off_option'];
+  const e=apFind(eid);
+  if(e&&AP_SELECT_DOMAINS.includes(e.domain)){
+    const g=apGuessBoolOptions(e.options||[],slot);
+    wData[k+'_on_option']=g.on;wData[k+'_off_option']=g.off;
+  }
+}
+function apInitReplace(slot,eid){
+  const k=slot.key;
+  wData[k+'_entity']=eid;delete wData[k+'_threshold'];delete wData[k+'_cmp'];
+  const e=apFind(eid);
+  if(e&&e.domain==='sensor'){
+    wData[k+'_cmp']='le';
+    const t=apDefaultThreshold(e);if(t!=='')wData[k+'_threshold']=t;
+  }
+}
+
+// Автоподбор остальных функций среди сущностей того же устройства HA
+function apAutofill(){
+  AP_ATTR_KEYS.forEach(k=>delete wData[k]);
+  const dev=apDevId();if(!dev)return;
+  const txt=e=>(e.entity_id+' '+e.friendly_name).toLowerCase();
+  const sameC=haAP.controls.filter(e=>e.device_id===dev&&e.entity_id!==wData.entity_id);
+  const sameS=haAP.sensors.filter(e=>e.device_id===dev);
+  const taken=new Set();
+
+  // Скорость: select, у которого опции похожи на скорости (минимум два совпадения)
+  let best=null,bestN=1;
+  for(const e of sameC.filter(x=>AP_SELECT_DOMAINS.includes(x.domain))){
+    const n=Object.values(apGuessSpeedMap(e.options||[])).filter(Boolean).length;
+    if(n>bestN){best=e;bestN=n;}
+  }
+  if(best){wData.speed_entity=best.entity_id;wData.speed_map=apGuessSpeedMap(best.options||[]);taken.add(best.entity_id);}
+
+  // Булевые режимы
+  for(const slot of AP_BOOL_SLOTS){
+    let found=null;
+    if(slot.key==='night_mode'){  // select с опцией «Sleep / Night / Сон»
+      found=sameC.find(e=>!taken.has(e.entity_id)&&AP_SELECT_DOMAINS.includes(e.domain)&&apPick(e.options||[],slot.onG,[]));
+    }
+    if(!found)found=sameC.find(e=>!taken.has(e.entity_id)&&slot.re.test(txt(e)));
+    if(found){apInitBool(slot,found.entity_id);taken.add(found.entity_id);}
+  }
+  // Замена фильтра / ионизатора
+  for(const slot of AP_REPLACE_SLOTS){
+    const found=sameS.find(e=>!taken.has(e.entity_id)&&slot.re.test(txt(e)));
+    if(found){apInitReplace(slot,found.entity_id);taken.add(found.entity_id);}
+  }
+  // Доступность
+  const online=sameS.find(e=>e.domain==='binary_sensor'&&(e.dc==='connectivity'||/online|connect|available|в сети/.test(txt(e))));
+  if(online)wData.online_entity=online.entity_id;
+}
+
+// ── Выбор сущности питания ──────────────────────────────────
+function apPowerItems(){
+  const list=haAP.power.filter(e=>!sFilter||(e.area+e.domain+e.entity_id+e.friendly_name).toLowerCase().includes(sFilter.toLowerCase()));
+  if(!list.length)return`<div class="p-empty">Нет подходящих сущностей (switch, input_boolean, fan)</div>`;
+  return list.map(e=>`<div class="p-item ${wData.entity_id===e.entity_id?'sel':''} ${usedCls(e.entity_id)}" onclick="pickAPPower('${esc(e.entity_id)}')">
+    <span class="dom-badge">${esc(e.domain)}</span><span class="p-area">${esc(e.area||'—')}</span>
+    <span class="p-name">${esc(e.friendly_name)}${usedBadge(e.entity_id)}</span><span class="p-eid">${esc(e.entity_id)}</span></div>`).join('');
+}
+function pickAPPower(eid){
+  const e=haAP.power.find(x=>x.entity_id===eid);if(!e)return;
+  wData.entity_id=e.entity_id;wData.entity_name=e.friendly_name;wData.entity_area=e.area;
+  apAutofill();
+  document.getElementById('wizContent').innerHTML=renderStep2AirPurifier();
+}
+
+// ── Карточки функций ────────────────────────────────────────
+function apTitle(icon,label,hint,req){
+  return `<div style="font-size:13px;font-weight:600;color:var(--text)">${icon} ${label}${req?' <span style="color:var(--danger)">*</span>':''}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:2px">${hint}</div>`;
+}
+function apEntitySelect(list,sel,onchange){
+  const dev=apDevId();
+  const mk=e=>`<option value="${esc(e.entity_id)}" ${sel===e.entity_id?'selected':''}>${esc(e.friendly_name)} — ${esc(e.entity_id)}</option>`;
+  const same=list.filter(e=>dev&&e.device_id===dev),other=list.filter(e=>!(dev&&e.device_id===dev));
+  return `<select style="${AP_SEL_STYLE}" onchange="${onchange}"><option value="">— не использовать —</option>`
+    +(same.length?`<optgroup label="Это же устройство">${same.map(mk).join('')}</optgroup>`:'')
+    +(other.length?`<optgroup label="Остальные сущности">${other.map(mk).join('')}</optgroup>`:'')+`</select>`;
+}
+function apOptSelect(options,val,onchange,emptyLabel,style){
+  return `<select style="${style||AP_SEL_INLINE}" onchange="${onchange}"><option value="">${emptyLabel}</option>`
+    +(options||[]).map(o=>`<option value="${esc(o)}" ${val===o?'selected':''}>${esc(o)}</option>`).join('')+`</select>`;
+}
+
+function apSpeedInner(){
+  const eid=wData.speed_entity||'';const e=eid?apFind(eid):null;
+  const list=haAP.controls.filter(x=>AP_SELECT_DOMAINS.includes(x.domain));
+  let map='';
+  if(e){
+    const opts=e.options||[];
+    map=opts.length?`<div style="font-size:11px;color:var(--muted);margin-top:8px">Какая опция выбирается для каждой скорости в Салюте:</div>`
+      +AP_SPEEDS.map(s=>`<div style="display:flex;align-items:center;gap:8px;margin-top:5px">
+        <span style="width:84px;font-size:12px;flex-shrink:0">${s.label}</span>
+        <div style="flex:1">${apOptSelect(opts,(wData.speed_map||{})[s.key]||'',`apSetSpeed('${s.key}',this.value)`,'— не поддерживается —')}</div></div>`).join('')
+      :`<div style="font-size:11px;color:var(--danger);margin-top:8px">⚠️ У сущности нет списка options — сопоставить скорости невозможно.</div>`;
+  }
+  return apTitle('🌀','Скорость вентилятора','select / input_select · в Салюте: авто, тихая, низкая, средняя, высокая, турбо')
+    +apEntitySelect(list,eid,`apSetSlot('speed','speed',this.value)`)+map;
+}
+function apBoolInner(slot){
+  const k=slot.key,eid=wData[k+'_entity']||'';const e=eid?apFind(eid):null;
+  let extra='';
+  if(e&&AP_SELECT_DOMAINS.includes(e.domain)){
+    const opts=e.options||[];
+    extra=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+      <div><div style="font-size:11px;color:var(--muted);margin-bottom:3px">Включено = опция</div>${apOptSelect(opts,wData[k+'_on_option']||'',`wData.${k}_on_option=this.value`,'— выберите —')}</div>
+      <div><div style="font-size:11px;color:var(--muted);margin-bottom:3px">Выключено = опция</div>${apOptSelect(opts,wData[k+'_off_option']||'',`wData.${k}_off_option=this.value`,'— выберите —')}</div></div>`;
+  }
+  return apTitle(slot.icon,slot.label,'switch / input_boolean, либо select — тогда укажите, какие опции означают «вкл» и «выкл»')
+    +apEntitySelect(haAP.controls,eid,`apSetSlot('bool','${k}',this.value)`)+extra;
+}
+function apReplaceInner(slot){
+  const k=slot.key,eid=wData[k+'_entity']||'';const e=eid?apFind(eid):null;
+  let extra='';
+  if(e&&e.domain==='sensor'){
+    const cmp=wData[k+'_cmp']==='ge'?'ge':'le';
+    const thr=wData[k+'_threshold']===undefined?'':wData[k+'_threshold'];
+    extra=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+      <span style="font-size:12px">Менять, когда значение</span>
+      <select style="${AP_SEL_INLINE};width:auto" onchange="wData.${k}_cmp=this.value">
+        <option value="le" ${cmp==='le'?'selected':''}>≤ порога (остаток ресурса)</option>
+        <option value="ge" ${cmp==='ge'?'selected':''}>≥ порога (наработка)</option></select>
+      <input type="number" step="any" placeholder="порог" value="${esc(thr)}" oninput="wData.${k}_threshold=this.value"
+        style="${AP_SEL_INLINE};width:90px"/>
+      <span style="font-size:12px;color:var(--muted)">${esc(e.unit||'')}</span></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:5px">Сейчас: <b>${esc(e.state||'—')}</b> ${esc(e.unit||'')}</div>`;
+  }
+  return apTitle(slot.icon,slot.label,'binary_sensor (on = менять) либо числовой sensor с порогом · только отображение в Салюте')
+    +apEntitySelect(haAP.sensors.filter(x=>x.domain==='binary_sensor'||x.domain==='sensor'),eid,`apSetSlot('replace','${k}',this.value)`)+extra;
+}
+function apOnlineInner(){
+  return apTitle('📶','Доступность','binary_sensor · если выключен — в Салюте очиститель «не в сети». Без него всегда «в сети»')
+    +apEntitySelect(haAP.sensors.filter(x=>x.domain==='binary_sensor'),wData.online_entity||'',`apSetSlot('online','online',this.value)`);
+}
+function apCardInner(id){
+  if(id==='speed')return apSpeedInner();
+  const b=AP_BOOL_SLOTS.find(s=>s.key===id);if(b)return apBoolInner(b);
+  const r=AP_REPLACE_SLOTS.find(s=>s.key===id);if(r)return apReplaceInner(r);
+  if(id==='online')return apOnlineInner();
+  return '';
+}
+function apSummary(){
+  const f=['вкл/выкл'];
+  if(wData.speed_entity)f.push('скорость');
+  for(const s of AP_BOOL_SLOTS)if(wData[s.key+'_entity'])f.push(s.label.toLowerCase());
+  for(const s of AP_REPLACE_SLOTS)if(wData[s.key+'_entity'])f.push(s.label.toLowerCase());
+  if(wData.online_entity)f.push('доступность');
+  return f.join(' · ');
+}
+function apRefresh(id){
+  const el=document.getElementById('apc_'+id);if(el)el.innerHTML=apCardInner(id);
+  const sm=document.getElementById('apSum');if(sm)sm.innerHTML=`Функции в Салюте: <b>${esc(apSummary())}</b>`;
+}
+function apSetSpeed(key,val){wData.speed_map=wData.speed_map||{};wData.speed_map[key]=val;}
+function apSetSlot(kind,key,eid){
+  if(kind==='speed'){
+    delete wData.speed_entity;delete wData.speed_map;
+    if(eid){const e=apFind(eid);wData.speed_entity=eid;wData.speed_map=apGuessSpeedMap(e?e.options||[]:[]);}
+  }else if(kind==='bool'){
+    const slot=AP_BOOL_SLOTS.find(s=>s.key===key);
+    ['_entity','_on_option','_off_option'].forEach(sf=>delete wData[key+sf]);
+    if(eid)apInitBool(slot,eid);
+  }else if(kind==='replace'){
+    const slot=AP_REPLACE_SLOTS.find(s=>s.key===key);
+    ['_entity','_threshold','_cmp'].forEach(sf=>delete wData[key+sf]);
+    if(eid)apInitReplace(slot,eid);
+  }else if(kind==='online'){
+    if(eid)wData.online_entity=eid;else delete wData.online_entity;
+  }
+  apRefresh(key);
+}
+
+function apValidate(){
+  if(!wData.entity_id)return 'Выберите сущность включения очистителя';
+  if(wData.speed_entity&&!Object.values(wData.speed_map||{}).some(Boolean))
+    return 'Скорость: сопоставьте хотя бы одно значение с опцией';
+  for(const s of AP_BOOL_SLOTS){
+    const eid=wData[s.key+'_entity'];const e=eid?apFind(eid):null;
+    if(e&&AP_SELECT_DOMAINS.includes(e.domain)){
+      const on=wData[s.key+'_on_option'],off=wData[s.key+'_off_option'];
+      if(!on||!off)return s.label+': выберите опции «включено» и «выключено»';
+      if(on===off)return s.label+': опции «включено» и «выключено» должны различаться';
+    }
+  }
+  for(const s of AP_REPLACE_SLOTS){
+    const eid=wData[s.key+'_entity'];const e=eid?apFind(eid):null;
+    const t=wData[s.key+'_threshold'];
+    if(e&&e.domain==='sensor'&&(t===undefined||t===''||isNaN(Number(t))))return s.label+': укажите пороговое значение';
+  }
+  return '';
+}
+
+function renderStep2AirPurifier(){
+  const sel=wData.entity_id;
+  const ids=['speed',...AP_BOOL_SLOTS.map(s=>s.key),...AP_REPLACE_SLOTS.map(s=>s.key),'online'];
+  return `<div class="fg" style="margin-bottom:10px"><label>1. Включение и выключение очистителя:</label>
+    <div style="font-size:11px;color:var(--muted);margin-top:3px">switch, input_boolean или fan. После выбора остальные функции подбираются из сущностей этого же устройства.</div></div>
+    <div class="picker">
+      <div class="psearch"><span style="color:var(--muted)">🔍</span>
+        <input type="text" placeholder="Поиск…" value="${esc(sFilter)}"
+          oninput="sFilter=this.value;document.getElementById('aplist').innerHTML=apPowerItems()"/>
+        <button class="clr" onclick="sFilter='';document.getElementById('aplist').innerHTML=apPowerItems()">✕</button>
+      </div>
+      <div class="p-head"><div>Домен</div><div>Комната</div><div>Имя</div><div>Entity ID</div></div>
+      <div class="p-list" style="max-height:170px" id="aplist">${apPowerItems()}</div>
+    </div>
+    ${sel?`<div style="margin-top:10px;padding:8px 12px;background:var(--primary-lt);border-radius:7px;font-size:12px;color:var(--primary-dk)">✓ Выбрано: <b>${esc(sel)}</b></div>
+    <div style="margin-top:18px">
+      <div class="fg"><label>2. Сопоставление функций Сбера и сущностей HA:</label>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">Всё, кроме включения, необязательно: функцию, для которой сущность не выбрана, Салют не покажет. Подобранное автоматически можно изменить.</div></div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+        ${ids.map(id=>`<div id="apc_${id}" style="${AP_CARD_STYLE}">${apCardInner(id)}</div>`).join('')}
+      </div>
+      <div id="apSum" style="margin-top:12px;padding:8px 12px;background:var(--primary-lt);border-radius:7px;font-size:12px;color:var(--primary-dk)">Функции в Салюте: <b>${esc(apSummary())}</b></div>
+    </div>`:''}`;
 }
