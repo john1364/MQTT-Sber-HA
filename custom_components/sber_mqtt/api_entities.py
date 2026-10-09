@@ -7,7 +7,12 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
-from .ha_helpers import get_entities_for_relay, get_sensor_entities, get_ha_entities
+from .ha_helpers import (
+    get_entities_for_relay,
+    get_sensor_entities,
+    get_ha_entities,
+    tv_features_from_supported,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -249,7 +254,15 @@ class SberHAEntitiesNumberView(HomeAssistantView):
 # ── GET /api/sber_mqtt/ha_entities/water_heater ───────────────────────────
 
 class SberHAEntitiesWaterHeaterView(HomeAssistantView):
-    """Список water_heater сущностей HA для чайника."""
+    """Список water_heater сущностей HA для чайника.
+
+    Возвращает также operation_list каждой сущности — у разных чайников
+    (SkyKettle, Redmond, Xiaomi и т.д.) набор режимов и их названия
+    отличаются (например: off/heat/boil/boil_heat/lamp/light или
+    "off"/Boiling/Warming/Heating/"IQ Boiling"). Список нужен панели,
+    чтобы пользователь сам сопоставил три команды Сбера
+    (вскипятить/нагреть/выключить) с реальными режимами устройства.
+    """
 
     url  = "/api/sber_mqtt/ha_entities/water_heater"
     name = "api:sber_mqtt:ha_entities_water_heater"
@@ -260,7 +273,15 @@ class SberHAEntitiesWaterHeaterView(HomeAssistantView):
 
     async def get(self, request: web.Request) -> web.Response:
         hass: HomeAssistant = request.app["hass"]
-        entities = get_ha_entities(hass, "water_heater")
+
+        def _operation_list(s, e):
+            if not s:
+                return []
+            return list(s.attributes.get("operation_list", []) or [])
+
+        entities = get_ha_entities(
+            hass, "water_heater", extra_fields={"operation_list": _operation_list}
+        )
         return web.json_response({"entities": entities})
 
 
@@ -404,10 +425,15 @@ class SberHAEntitiesFanView(HomeAssistantView):
         return web.json_response({"entities": entities})
 
 
-# ── GET /api/sber_mqtt/ha_entities/tv ─────────────────────────────────
+# ── GET /api/sber_mqtt/ha_entities/tv ────────────────────────────────────────
 
 class SberHAEntitiesTVView(HomeAssistantView):
-    """Список media_player-сущностей HA для телевизора."""
+    """Список media_player-сущностей HA для привязки к телевизору.
+
+    Для каждой сущности возвращает флаги поддерживаемых функций
+    (громкость, mute, шаг громкости) — по ним панель показывает, что
+    будет доступно в Салюте.
+    """
 
     url  = "/api/sber_mqtt/ha_entities/tv"
     name = "api:sber_mqtt:ha_entities_tv"
@@ -418,15 +444,72 @@ class SberHAEntitiesTVView(HomeAssistantView):
 
     async def get(self, request: web.Request) -> web.Response:
         hass: HomeAssistant = request.app["hass"]
-        entities = get_ha_entities(hass, "media_player", extra_fields={
-            "source_list": lambda s, e: s.attributes.get("source_list", []) if s else [],
-            "volume_level": lambda s, e: s.attributes.get("volume_level") if s else None,
-            "is_volume_muted": lambda s, e: s.attributes.get("is_volume_muted") if s else None,
-            "supported_features": lambda s, e: s.attributes.get("supported_features", 0) if s else 0,
-        })
+
+        def _flags(s, e):
+            if not s:
+                return {}
+            return tv_features_from_supported(s.attributes.get("supported_features"))
+
+        entities = get_ha_entities(hass, "media_player", extra_fields={"tv_features": _flags})
         return web.json_response({"entities": entities})
 
 
+# ── GET /api/sber_mqtt/ha_entities/air_purifier ─────────────────────────────
+
+class SberHAEntitiesAirPurifierView(HomeAssistantView):
+    """Кандидаты для привязки к очистителю воздуха.
+
+    Очиститель в HA — набор сущностей, поэтому возвращаем три списка:
+      power    — switch / input_boolean / fan   (включение и выключение)
+      controls — switch / input_boolean / select / input_select
+                 (скорость и режимы; у select есть список options)
+      sensors  — sensor / binary_sensor
+                 (замена фильтра / ионизатора, доступность; с unit и device_class)
+    У каждой сущности есть device_id — по нему мастер подбирает остальные
+    сущности того же физического устройства.
+    """
+
+    url  = "/api/sber_mqtt/ha_entities/air_purifier"
+    name = "api:sber_mqtt:ha_entities_air_purifier"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        pass
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+
+        def _options(s, e):
+            if not s:
+                return []
+            opts = s.attributes.get("options")
+            return list(opts) if isinstance(opts, (list, tuple)) else []
+
+        def _unit(s, e):
+            return (s.attributes.get("unit_of_measurement") or "") if s else ""
+
+        def _state(s, e):
+            return s.state if s else ""
+
+        def _dc(s, e):
+            return (
+                e.original_device_class
+                or e.device_class
+                or (s.attributes.get("device_class", "") if s else "")
+                or ""
+            )
+
+        return web.json_response({
+            "power": get_ha_entities(hass, ["switch", "input_boolean", "fan"]),
+            "controls": get_ha_entities(
+                hass, ["switch", "input_boolean", "select", "input_select"],
+                extra_fields={"options": _options},
+            ),
+            "sensors": get_ha_entities(
+                hass, ["sensor", "binary_sensor"],
+                extra_fields={"unit": _unit, "dc": _dc, "state": _state},
+            ),
+        })
 # ── GET /api/sber_mqtt/ha_entities/intercom ───────────────────────────
 
 class SberHAEntitiesIntercomView(HomeAssistantView):

@@ -73,6 +73,10 @@ class HACommandHandler:
             await self._handle_humidifier_command(device, states)
         elif device_type == "kettle":
             await self._handle_kettle_command(device, states)
+        elif device_type == "tv":
+            await self._handle_tv_command(device, states)
+        elif device_type == "air_purifier":
+            await self._handle_air_purifier_command(device, states)
         elif device_type == "vacuum_cleaner":
             await self._handle_vacuum_command(device, states)
         elif device_type == "valve":
@@ -83,8 +87,6 @@ class HACommandHandler:
             await self._handle_hvac_radiator_command(device, states)
         elif device_type == "hvac_fan":
             await self._handle_hvac_fan_command(device, states)
-        elif device_type == "tv":
-            await self._handle_tv_command(device, states)
         elif device_type == "intercom":
             await self._handle_intercom_command(device, states)
 
@@ -446,83 +448,6 @@ class HACommandHandler:
                         self._track_ha_command(device, states, "homeassistant", svc, {"entity_id": entity_id})
                         await self._async_call("homeassistant", svc, {"entity_id": entity_id}, blocking=False)
 
-    async def _handle_tv_command(self, device: dict, states: list) -> None:
-        """Обрабатывает команды управления телевизором от Сбера."""
-        attrs     = device.get("attributes", {})
-        entity_id = attrs.get("entity_id", "")
-        domain    = entity_id.split(".")[0] if entity_id else "media_player"
-
-        _LOGGER.info("TV %s: raw command = %s", device.get("id"), states)
-
-        for state in states:
-            key     = state.get("key", "")
-            val_obj = state.get("value", {})
-
-            if key == "on_off":
-                is_on = _parse_bool(val_obj)
-                service = "turn_on" if is_on else "turn_off"
-                self._track_ha_command(device, states, domain, service, {"entity_id": entity_id})
-                await self._async_call(
-                    domain, service, {"entity_id": entity_id}, blocking=False
-                )
-
-            elif key == "volume":
-                direction = val_obj.get("enum_value", "")
-                if direction == "up":
-                    self._track_ha_command(device, states, domain, "volume_up", {"entity_id": entity_id})
-                    await self._async_call(domain, "volume_up", {"entity_id": entity_id}, blocking=False)
-                elif direction == "down":
-                    self._track_ha_command(device, states, domain, "volume_down", {"entity_id": entity_id})
-                    await self._async_call(domain, "volume_down", {"entity_id": entity_id}, blocking=False)
-
-            elif key == "volume_int":
-                vol = _parse_integer(val_obj)
-                try:
-                    level = max(0.0, min(1.0, float(vol) / 100.0))
-                    self._track_ha_command(device, states, domain, "volume_set",
-                                           {"entity_id": entity_id, "volume_level": level})
-                    await self._async_call(
-                        domain, "volume_set", {"entity_id": entity_id, "volume_level": level}, blocking=False
-                    )
-                except (ValueError, TypeError):
-                    pass
-
-            elif key == "mute":
-                mute = _parse_bool(val_obj)
-                self._track_ha_command(device, states, domain, "volume_mute",
-                                       {"entity_id": entity_id, "is_volume_muted": mute})
-                await self._async_call(
-                    domain, "volume_mute", {"entity_id": entity_id, "is_volume_muted": mute}, blocking=False
-                )
-
-            elif key == "channel":
-                direction = val_obj.get("enum_value", "")
-                if direction == "next":
-                    self._track_ha_command(device, states, domain, "media_next_track", {"entity_id": entity_id})
-                    await self._async_call(domain, "media_next_track", {"entity_id": entity_id}, blocking=False)
-                elif direction == "prev":
-                    self._track_ha_command(device, states, domain, "media_previous_track", {"entity_id": entity_id})
-                    await self._async_call(domain, "media_previous_track", {"entity_id": entity_id}, blocking=False)
-
-            elif key == "source":
-                src = val_obj.get("enum_value", "")
-                if src:
-                    self._track_ha_command(device, states, domain, "select_source",
-                                           {"entity_id": entity_id, "source": src})
-                    await self._async_call(
-                        domain, "select_source", {"entity_id": entity_id, "source": src}, blocking=False
-                    )
-
-            elif key in ("custom_key", "direction", "number", "channel_int"):
-                # Эти команды не маппятся на стандартные HA-сервисы —
-                # генерируем событие для automation
-                value = val_obj.get("enum_value") or val_obj.get("integer_value")
-                self._hass.bus.async_fire("sber_tv_command", {
-                    "entity_id": entity_id,
-                    "key": key,
-                    "value": value,
-                })
-
     async def _handle_vacuum_command(self, device: dict, states: list) -> None:
         """Обрабатывает команды управления пылесосом от Сбера.
 
@@ -828,6 +753,201 @@ class HACommandHandler:
                 except (ValueError, TypeError):
                     pass
 
+    async def _handle_tv_command(self, device: dict, states: list) -> None:
+        """Обрабатывает команды управления телевизором от Сбера.
+
+        Источник: сущность домена media_player.
+
+        Поддерживаемые команды:
+          on_off     — включить/выключить (media_player.turn_on / turn_off)
+          mute       — бесшумный режим (media_player.volume_mute)
+          volume_int — громкость 0–100 → media_player.volume_set (0.0–1.0)
+          volume     — «громче»/«тише» ("+"/"-") → media_player.volume_up / volume_down;
+                       если сущность не умеет шаг громкости, но умеет volume_set —
+                       считаем новую громкость сами (±5%)
+        """
+        from .const import (
+            SBER_TV_VOLUME_UP,
+            SBER_TV_VOLUME_DOWN,
+            TV_FEATURE_VOLUME_SET,
+            TV_FEATURE_VOLUME_STEP,
+            TV_VOLUME_FALLBACK_STEP,
+        )
+
+        attrs     = device.get("attributes", {})
+        entity_id = attrs.get("entity_id", "")
+        dev_id    = device.get("id")
+
+        if not entity_id:
+            _LOGGER.error("ТВ %s: не задан entity_id", dev_id)
+            return
+
+        for state in states:
+            key     = state.get("key")
+            val_obj = state.get("value", {}) or {}
+
+            if key == "on_off":
+                is_on   = _parse_bool(val_obj)
+                service = "turn_on" if is_on else "turn_off"
+                _LOGGER.info("ТВ %s: on_off=%s → media_player.%s", dev_id, is_on, service)
+                data = {"entity_id": entity_id}
+                self._track_ha_command(device, states, "media_player", service, data)
+                await self._async_call(
+                    "media_player", service, data, blocking=False
+                )
+
+            elif key == "mute":
+                # Протокол Сбера: отсутствие bool_value трактуется как false (звук включить)
+                muted = _parse_bool(val_obj)
+                _LOGGER.info("ТВ %s: mute=%s → media_player.volume_mute", dev_id, muted)
+                data = {"entity_id": entity_id, "is_volume_muted": muted}
+                self._track_ha_command(device, states, "media_player", "volume_mute", data)
+                await self._async_call(
+                    "media_player", "volume_mute", data, blocking=False
+                )
+
+            elif key == "volume_int":
+                pct   = max(0, min(100, _parse_integer(val_obj, 0)))
+                level = round(pct / 100, 2)
+                _LOGGER.info("ТВ %s: volume_int=%d → media_player.volume_set(%.2f)", dev_id, pct, level)
+                data = {"entity_id": entity_id, "volume_level": level}
+                self._track_ha_command(device, states, "media_player", "volume_set", data)
+                await self._async_call(
+                    "media_player", "volume_set", data, blocking=False
+                )
+
+            elif key == "volume":
+                direction = str(val_obj.get("enum_value", "")).strip().lower()
+                if direction in SBER_TV_VOLUME_UP:
+                    step_up = True
+                elif direction in SBER_TV_VOLUME_DOWN:
+                    step_up = False
+                else:
+                    _LOGGER.warning("ТВ %s: неизвестная команда volume '%s'", dev_id, direction)
+                    continue
+
+                # Возможности берём из живого состояния сущности
+                ha_state = self._hass.states.get(entity_id)
+                try:
+                    sf = int(ha_state.attributes.get("supported_features") or 0) if ha_state else 0
+                except (ValueError, TypeError):
+                    sf = 0
+
+                if sf & TV_FEATURE_VOLUME_STEP or not (sf & TV_FEATURE_VOLUME_SET):
+                    # Штатный шаг громкости (также запасной вариант, если флаги
+                    # неизвестны — пусть HA сам вернёт ошибку, если не поддерживается)
+                    service = "volume_up" if step_up else "volume_down"
+                    _LOGGER.info("ТВ %s: volume '%s' → media_player.%s", dev_id, direction, service)
+                    data = {"entity_id": entity_id}
+                    self._track_ha_command(device, states, "media_player", service, data)
+                    await self._async_call(
+                        "media_player", service, data, blocking=False
+                    )
+                else:
+                    # Нет volume_up/down, но есть volume_set — считаем сами
+                    current = ha_state.attributes.get("volume_level") if ha_state else None
+                    try:
+                        current = float(current)
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(
+                            "ТВ %s: volume '%s' — текущая громкость неизвестна, команда пропущена",
+                            dev_id, direction,
+                        )
+                        continue
+                    delta = TV_VOLUME_FALLBACK_STEP if step_up else -TV_VOLUME_FALLBACK_STEP
+                    level = round(max(0.0, min(1.0, current + delta)), 2)
+                    _LOGGER.info(
+                        "ТВ %s: volume '%s' → media_player.volume_set(%.2f)", dev_id, direction, level
+                    )
+                    data = {"entity_id": entity_id, "volume_level": level}
+                    self._track_ha_command(device, states, "media_player", "volume_set", data)
+                    await self._async_call(
+                        "media_player", "volume_set", data, blocking=False
+                    )
+
+            else:
+                _LOGGER.debug("ТВ %s: команда '%s' не поддерживается, пропущена", dev_id, key)
+
+    async def _handle_air_purifier_command(self, device: dict, states: list) -> None:
+        """Обрабатывает команды управления очистителем воздуха от Сбера.
+
+        Очиститель в HA — набор отдельных сущностей, поэтому каждая функция
+        Сбера управляет «своей» сущностью, выбранной пользователем в мастере.
+
+        Поддерживаемые команды:
+          on_off              — <domain>.turn_on / turn_off для сущности питания
+          hvac_air_flow_power — скорость → select.select_option (по speed_map)
+          hvac_night_mode, hvac_ionization, hvac_aromatization, hvac_decontaminate
+                              — switch/input_boolean: turn_on/turn_off;
+                                select/input_select: выбор опции «вкл» / «выкл»
+        hvac_replace_filter и hvac_replace_ionizator — только состояние, команды игнорируются.
+        """
+        from .air_purifier import clean_speed_map, domain_of
+        from .const import AIR_PURIFIER_BOOL_FEATURES, AIR_PURIFIER_SELECT_DOMAINS
+
+        attrs  = device.get("attributes", {})
+        dev_id = device.get("id")
+        sber_to_name = {v: k for k, v in AIR_PURIFIER_BOOL_FEATURES.items()}
+
+        async def _call(domain: str, service: str, data: dict) -> None:
+            self._track_ha_command(device, states, domain, service, data)
+            await self._async_call(domain, service, data, blocking=False)
+
+        for state in states:
+            key     = state.get("key")
+            val_obj = state.get("value", {}) or {}
+
+            if key == "on_off":
+                entity_id = attrs.get("entity_id", "")
+                if not entity_id:
+                    _LOGGER.error("Очиститель %s: не задан entity_id питания", dev_id)
+                    continue
+                is_on   = _parse_bool(val_obj)
+                service = "turn_on" if is_on else "turn_off"
+                domain  = domain_of(entity_id)
+                _LOGGER.info("Очиститель %s: on_off=%s → %s.%s", dev_id, is_on, domain, service)
+                await _call(domain, service, {"entity_id": entity_id})
+
+            elif key == "hvac_air_flow_power":
+                entity_id = attrs.get("speed_entity", "")
+                sber_val  = str(val_obj.get("enum_value", "")).strip().lower()
+                option    = clean_speed_map(attrs).get(sber_val)
+                if not entity_id or not option:
+                    _LOGGER.warning(
+                        "Очиститель %s: скорость '%s' не сопоставлена с опцией select",
+                        dev_id, sber_val,
+                    )
+                    continue
+                domain = domain_of(entity_id)
+                _LOGGER.info("Очиститель %s: скорость %s → %s.select_option(%s)", dev_id, sber_val, domain, option)
+                await _call(domain, "select_option", {"entity_id": entity_id, "option": option})
+
+            elif key in sber_to_name:
+                name      = sber_to_name[key]
+                entity_id = attrs.get(f"{name}_entity", "")
+                if not entity_id:
+                    _LOGGER.warning("Очиститель %s: для %s не выбрана сущность", dev_id, key)
+                    continue
+                is_on  = _parse_bool(val_obj)
+                domain = domain_of(entity_id)
+                if domain in AIR_PURIFIER_SELECT_DOMAINS:
+                    option = attrs.get(f"{name}_on_option" if is_on else f"{name}_off_option")
+                    if not option:
+                        _LOGGER.warning(
+                            "Очиститель %s: %s=%s — не задана опция select для этого значения",
+                            dev_id, key, is_on,
+                        )
+                        continue
+                    _LOGGER.info("Очиститель %s: %s=%s → %s.select_option(%s)", dev_id, key, is_on, domain, option)
+                    await _call(domain, "select_option", {"entity_id": entity_id, "option": option})
+                else:
+                    service = "turn_on" if is_on else "turn_off"
+                    _LOGGER.info("Очиститель %s: %s=%s → %s.%s", dev_id, key, is_on, domain, service)
+                    await _call(domain, service, {"entity_id": entity_id})
+
+            else:
+                _LOGGER.debug("Очиститель %s: команда '%s' не поддерживается, пропущена", dev_id, key)
+
     async def _handle_humidifier_command(self, device: dict, states: list) -> None:
         """Обрабатывает команды управления увлажнителем от Сбера.
 
@@ -892,17 +1012,30 @@ class HACommandHandler:
     async def _handle_kettle_command(self, device: dict, states: list) -> None:
         """Обрабатывает команды управления чайником от Сбера.
 
-        Источник: сущность домена water_heater.
-        Поддерживаемые команды:
-          on_off                        — включить (water_heater.turn_on) /
-                                          выключить (water_heater.set_operation_mode, mode=off).
-                                          Игнорируется если в той же команде пришла температура.
-          kitchen_water_temperature_set — установить целевую температуру
-                                          (water_heater.set_temperature).
-                                          set_temperature само включает чайник — turn_on не нужен.
+        Источник: сущность домена water_heater (SkyKettle и аналоги).
 
-        Логика: если пришла температура — применяем её, on_off игнорируем.
-        Если пришёл только on_off — выполняем как обычно.
+        Сбер не присылает явных команд вида "выключить"/"вскипятить"/
+        "нагреть" — он шлёт только состояния on_off (BOOL) и, опционально,
+        kitchen_water_temperature_set (INTEGER). Намерение вычисляется из
+        их комбинации (см. логику ниже), и получаются ровно три сценария.
+
+        У каждой модели чайника свой operation_list со своими названиями
+        режимов (например off/heat/boil/boil_heat/lamp/light, или
+        "off"/Boiling/Warming/Heating/"IQ Boiling"), поэтому при добавлении
+        чайника в панели пользователь сопоставляет эти три сценария с
+        реальными значениями operation_list устройства — они сохраняются
+        в attributes (off_mode / boil_mode / heat_mode) и используются
+        здесь вместо захардкоженных строк "off"/"boil"/"heat".
+
+        Логика:
+          on_off отсутствует/false            → выключить (set_operation_mode = off_mode)
+          on_off = true, temp задана          → set_temperature(temperature=temp, operation_mode)
+                                                 (100 или temp не задана → boil_mode, иначе heat_mode)
+          on_off = true, temp не задана       → вскипятить (set_operation_mode = boil_mode)
+
+        Для обратной совместимости с устройствами, добавленными до этого
+        сопоставления (в attributes нет off_mode/boil_mode/heat_mode),
+        используются старые значения "off"/"boil"/"heat".
         """
         attrs     = device.get("attributes", {})
         entity_id = attrs.get("entity_id", "")
@@ -911,62 +1044,91 @@ class HACommandHandler:
             _LOGGER.error("Чайник %s: не задан entity_id", device.get("id"))
             return
 
-        keys = {s.get("key") for s in states}
-        has_temp   = "kitchen_water_temperature_set" in keys
-        has_on_off = "on_off" in keys
+        # Режимы устройства, выбранные пользователем при добавлении.
+        # Фолбэк на старые захардкоженные значения — для чайников,
+        # добавленных до появления этой настройки.
+        off_mode  = attrs.get("off_mode")  or "off"
+        boil_mode = attrs.get("boil_mode") or "boil"
+        # Если отдельного режима нагрева нет — используем режим кипячения.
+        heat_mode = attrs.get("heat_mode") or boil_mode
 
-        # ── Ветка 1: пришла температура ───────────────────────────────────
-        if has_temp:
-            for state in states:
-                if state.get("key") != "kitchen_water_temperature_set":
-                    continue
-                temp = _parse_integer(state.get("value", {}))
-                try:
-                    temp_f = float(temp)
-                except (ValueError, TypeError):
-                    _LOGGER.warning("Kettle %s: невалидная температура: %s", device.get("id"), temp)
-                    continue
+        if not attrs.get("off_mode") or not attrs.get("boil_mode"):
+            _LOGGER.warning(
+                "Kettle %s: не заданы off_mode/boil_mode в attributes — "
+                "используются значения по умолчанию ('off'/'boil'). "
+                "Пересохраните устройство в панели, указав реальные "
+                "значения operation_list.",
+                device.get("id"),
+            )
 
-                _LOGGER.info(
-                    "Kettle %s: set_temperature=%.0f, operation_mode=electric → water_heater.set_temperature",
-                    device.get("id"), temp_f,
-                )
-                self._track_ha_command(device, states, "water_heater", "set_operation_mode",
-                                       {"entity_id": entity_id, "operation_mode": "electric"})
-                await self._async_call(
-                    domain = "water_heater",
-                    service = "set_operation_mode",
-                    service_data = {"entity_id": entity_id, "operation_mode": "electric"},
-                    blocking=True
-                )
-                self._track_ha_command(device, states, "water_heater", "set_temperature",
-                                       {"entity_id": entity_id, "temperature": temp_f, "operation_mode": "electric"})
-                await self._async_call(
-                    domain = "water_heater",
-                    service = "set_temperature",
-                    service_data = {"entity_id": entity_id, "temperature": temp_f, "operation_mode": "electric"}
-                )
-                return
+        # Извлекаем on_off и целевую температуру из states
+        on_off      = None
+        target_temp = None
+        for state in states:
+            key = state.get("key")
+            if key == "on_off":
+                on_off = _parse_bool(state.get("value", {}))
+            elif key == "kitchen_water_temperature_set":
+                target_temp = _parse_integer(state.get("value", {}))
 
-            # ── Ветка 2: только on_off ────────────────────────────────────────
-            if has_on_off:
-                for state in states:
-                    if state.get("key") != "on_off":
-                        continue
-                    is_on = _parse_bool(state.get("value", {}))
-                    if is_on:
-                        _LOGGER.info("Kettle %s: on_off=True → water_heater.turn_on", device.get("id"))
-                        self._track_ha_command(device, states, "water_heater", "turn_on",
-                                               {"entity_id": entity_id})
-                        await self._async_call(
-                            "water_heater", "turn_on", {"entity_id": entity_id}, blocking=False,
-                        )
-                    else:
-                        _LOGGER.info("Kettle %s: on_off=False → water_heater.set_operation_mode(off)", device.get("id"))
-                        self._track_ha_command(device, states, "water_heater", "set_operation_mode",
-                                               {"entity_id": entity_id, "operation_mode": "off"})
-                        await self._async_call(
-                            "water_heater", "set_operation_mode",
-                            {"entity_id": entity_id, "operation_mode": "off"},
-                            blocking=False,
-                        )
+        # ── Выключение ────────────────────────────────────────────────────
+        if on_off is False:
+            _LOGGER.info(
+                "Kettle %s: on_off=False → water_heater.set_operation_mode(%s)",
+                device.get("id"), off_mode,
+            )
+            self._track_ha_command(device, states, "water_heater", "set_operation_mode",
+                                   {"entity_id": entity_id, "operation_mode": off_mode})
+            await self._async_call(
+                "water_heater", "set_operation_mode",
+                {"entity_id": entity_id, "operation_mode": off_mode},
+                blocking=False,
+            )
+            return
+
+        # ── Включение / вскипятить / нагрев ─────────────────────────────────
+        temp_f = None
+        if target_temp is not None:
+            try:
+                temp_f = float(target_temp)
+            except (ValueError, TypeError):
+                _LOGGER.warning(
+                    "Kettle %s: невалидная температура: %s", device.get("id"), target_temp
+                )
+
+        # 100°C → кипячение, ниже → нагрев до температуры, без температуры → кипячение
+        is_heat = temp_f is not None and temp_f < 100
+        operation_mode = heat_mode if is_heat else boil_mode
+
+        # Сервис water_heater.set_temperature принимает не только
+        # temperature, но и operation_mode — можно выставить и температуру,
+        # и режим одной командой, без двух последовательных вызовов.
+        if temp_f is not None:
+            _LOGGER.info(
+                "Kettle %s: water_heater.set_temperature(temperature=%.0f, operation_mode=%s)",
+                device.get("id"), temp_f, operation_mode,
+            )
+            self._track_ha_command(device, states, "water_heater", "set_temperature",
+                                   {"entity_id": entity_id, "temperature": temp_f,
+                                    "operation_mode": operation_mode})
+            await self._async_call(
+                "water_heater", "set_temperature",
+                {"entity_id": entity_id, "temperature": temp_f,
+                 "operation_mode": operation_mode},
+                blocking=False,
+            )
+            return
+
+        # Температура не задана (просто on_off=true без temperature) —
+        # ставим только режим кипячения.
+        _LOGGER.info(
+            "Kettle %s: on_off=%s, temp не задана → water_heater.set_operation_mode(%s)",
+            device.get("id"), on_off, operation_mode,
+        )
+        self._track_ha_command(device, states, "water_heater", "set_operation_mode",
+                               {"entity_id": entity_id, "operation_mode": operation_mode})
+        await self._async_call(
+            "water_heater", "set_operation_mode",
+            {"entity_id": entity_id, "operation_mode": operation_mode},
+            blocking=False,
+        )

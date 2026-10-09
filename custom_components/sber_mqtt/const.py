@@ -51,6 +51,7 @@ DEVICE_TYPE_TV              = "tv"               # Телевизор
 DEVICE_TYPE_INTERCOM         = "intercom"         # Домофон
 DEVICE_TYPE_SENSOR_PIR       = "sensor_pir"       # Датчик движения
 DEVICE_TYPE_EVENT_BUTTON     = "event_button"     # Кнопка событий HA → Сбер
+DEVICE_TYPE_AIR_PURIFIER    = "air_purifier"     # Очиститель воздуха (набор сущностей HA)
 
 # Маппинг скоростей вентилятора Сбер → HA (humidifier mode)
 # Сбер: auto | low | medium | high | turbo | quiet
@@ -149,6 +150,7 @@ SUPPORTED_DEVICE_TYPES = {
     DEVICE_TYPE_INTERCOM:        "Домофон",
     DEVICE_TYPE_SENSOR_PIR:      "Датчик движения",
     DEVICE_TYPE_EVENT_BUTTON:    "Кнопка событий (event → Сбер)",
+    DEVICE_TYPE_AIR_PURIFIER:    "Очиститель воздуха",
 }
 
 # ── Домены HA для типа "реле" ─────────────────────────────────────────────
@@ -328,3 +330,71 @@ SBER_COVER_COMMAND_TO_HA = {
     "close": ("cover", "close_cover"),
     "stop":  ("cover", "stop_cover"),
 }
+
+# ── Телевизор (tv) ────────────────────────────────────────────────────────
+# Сбер категория: tv. HA domain: media_player.
+# Поддерживаемые функции Сбера: online, on_off, mute, volume_int, volume.
+# Остальные (channel, source, direction, custom_key, number…) пока не реализованы.
+TV_DOMAINS = {"media_player"}
+
+# Состояния media_player, которые считаем «выключен» (всё остальное — включён).
+# standby — телевизор в режиме ожидания, для пользователя это «выключен».
+TV_OFF_STATES = {"off", "standby"}
+
+# Биты MediaPlayerEntityFeature (supported_features)
+TV_FEATURE_VOLUME_SET  = 4
+TV_FEATURE_VOLUME_MUTE = 8
+TV_FEATURE_VOLUME_STEP = 1024
+
+# Шаг громкости (в долях 0..1) для команды volume "+"/"-",
+# если сущность не поддерживает volume_up/volume_down, но умеет volume_set
+TV_VOLUME_FALLBACK_STEP = 0.05
+
+# Значения команды volume от Сбера → направление
+SBER_TV_VOLUME_UP   = {"+", "up", "volume_up", "louder"}
+SBER_TV_VOLUME_DOWN = {"-", "down", "volume_down", "quieter"}
+
+# ── Очиститель воздуха (hvac_air_purifier) ────────────────────────────────
+# В HA очиститель — это не одна сущность, а набор switch / select / sensor.
+# Пользователь сопоставляет их функциям Сбера в мастере добавления.
+#
+# Обязательные функции Сбера: online, on_off.
+# Поддерживаются: hvac_air_flow_power, hvac_night_mode, hvac_ionization,
+#   hvac_aromatization, hvac_decontaminate, hvac_replace_filter, hvac_replace_ionizator.
+#
+# Атрибуты устройства (device["attributes"]):
+#   entity_id                    — включение/выключение (switch / input_boolean / fan)
+#   speed_entity + speed_map     — скорость вентилятора: select/input_select и
+#                                  словарь {значение Сбера: опция select}
+#   <name>_entity                — булевые режимы (night_mode, ionization, aromatization,
+#   <name>_on_option/_off_option   decontaminate): switch/input_boolean либо select
+#                                  (тогда нужны опции «включено» / «выключено»)
+#   replace_filter_entity,       — «нужно менять»: binary_sensor либо числовой sensor
+#   replace_ionizator_entity       (+ <name>_threshold и <name>_cmp: "le" — меньше или равно,
+#   + _threshold, _cmp             "ge" — больше или равно)
+#   online_entity                — binary_sensor доступности (опционально)
+AIR_PURIFIER_SPEED_VALUES = ["auto", "quiet", "low", "medium", "high", "turbo"]
+
+# имя слота → функция Сбера (управляемые BOOL-режимы)
+AIR_PURIFIER_BOOL_FEATURES: dict[str, str] = {
+    "night_mode":    "hvac_night_mode",
+    "ionization":    "hvac_ionization",
+    "aromatization": "hvac_aromatization",
+    "decontaminate": "hvac_decontaminate",
+}
+# имя слота → функция Сбера (только состояние, менять нельзя)
+AIR_PURIFIER_REPLACE_FEATURES: dict[str, str] = {
+    "replace_filter":    "hvac_replace_filter",
+    "replace_ionizator": "hvac_replace_ionizator",
+}
+
+AIR_PURIFIER_POWER_DOMAINS  = {"switch", "input_boolean", "fan"}
+AIR_PURIFIER_SELECT_DOMAINS = {"select", "input_select"}
+AIR_PURIFIER_SWITCH_DOMAINS = {"switch", "input_boolean"}
+
+# Все ключи атрибутов, содержащие entity_id (для подписки на изменения)
+AIR_PURIFIER_ENTITY_KEYS = (
+    "entity_id", "speed_entity", "online_entity",
+    *(f"{n}_entity" for n in AIR_PURIFIER_BOOL_FEATURES),
+    *(f"{n}_entity" for n in AIR_PURIFIER_REPLACE_FEATURES),
+)

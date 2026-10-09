@@ -29,6 +29,10 @@ _DEV_TRACKING_MAX = 500
 _DEV_TRACKING_DEVICE_ID: str | None = None  # Какое устройство отслеживаем
 _DEV_TRACKING_ACTIVE = False  # Включено ли отслеживание
 
+# Контекст изменения состояния HA — устанавливается перед публикацией статуса
+# и потребляется при классификации события ha_status_update
+_DEV_TRACKING_HA_STATE_CONTEXT: dict | None = None
+
 
 def devtools_on_command(topic: str, payload_raw: str) -> None:
     """Вызвать из mqtt_client при получении любого входящего MQTT сообщения (Сбер → HA).
@@ -106,7 +110,7 @@ def devtools_get_tracking_info() -> dict:
 
 def _devtools_track_entry(entry: dict) -> None:
     """Добавить запись в буфер отслеживания если устройство совпадает."""
-    global _DEV_TRACKING_BUFFER
+    global _DEV_TRACKING_BUFFER, _DEV_TRACKING_HA_STATE_CONTEXT
     if not _DEV_TRACKING_ACTIVE or not _DEV_TRACKING_DEVICE_ID:
         return
 
@@ -138,6 +142,12 @@ def _devtools_track_entry(entry: dict) -> None:
         # Определяем тип события
         event_type = _classify_tracking_event(topic, payload, device_id)
         tracking_entry = {**entry, "event_type": event_type}
+
+        # Для ha_status_update — добавляем контекст изменения HA
+        if event_type == "ha_status_update" and _DEV_TRACKING_HA_STATE_CONTEXT:
+            tracking_entry["ha_state_context"] = _DEV_TRACKING_HA_STATE_CONTEXT
+            _DEV_TRACKING_HA_STATE_CONTEXT = None
+
         _DEV_TRACKING_BUFFER.append(tracking_entry)
         if len(_DEV_TRACKING_BUFFER) > _DEV_TRACKING_MAX:
             del _DEV_TRACKING_BUFFER[:-_DEV_TRACKING_MAX]
@@ -172,6 +182,64 @@ def _classify_tracking_event(topic: str, payload: dict, device_id: str) -> str:
         return "ha_command"
 
     return "other"
+
+
+def devtools_set_tracking_ha_state_context(context: dict) -> None:
+    """Установить контекст изменения HA для отслеживания.
+    
+    Вызывается из StateTracker перед публикацией статуса.
+    Контекст будет прикреплён к следующему событию ha_status_update.
+    
+    Args:
+        context: {
+            "entity_id": "switch.my_switch",
+            "state_before": "off",
+            "state_after": "on",
+            "device_id": "device_123",
+            "device_type": "relay",
+        }
+    """
+    global _DEV_TRACKING_HA_STATE_CONTEXT
+    _DEV_TRACKING_HA_STATE_CONTEXT = context
+
+
+def devtools_track_ha_state_change(device_id: str, entity_id: str, state_before: str, state_after: str, device_type: str) -> None:
+    """Записать в буфер отслеживания событие изменения состояния HA.
+    
+    Вызывается из StateTracker при изменении состояния сущности,
+    привязанной к отслеживаемому устройству.
+    """
+    global _DEV_TRACKING_BUFFER
+    if not _DEV_TRACKING_ACTIVE or not _DEV_TRACKING_DEVICE_ID:
+        return
+    
+    if device_id != _DEV_TRACKING_DEVICE_ID:
+        return
+    
+    import time as _time
+    entry = {
+        "ts": _time.time(),
+        "topic": f"ha_state_change/{device_id}/{entity_id}",
+        "payload": {
+            "device_id": device_id,
+            "entity_id": entity_id,
+            "state_before": state_before,
+            "state_after": state_after,
+            "device_type": device_type,
+        },
+        "direction": "out",
+        "event_type": "ha_state_change",
+    }
+    _DEV_TRACKING_BUFFER.append(entry)
+    if len(_DEV_TRACKING_BUFFER) > _DEV_TRACKING_MAX:
+        del _DEV_TRACKING_BUFFER[:-_DEV_TRACKING_MAX]
+    
+    # Push to SSE queues for real-time streaming
+    for q in list(_DEV_COMMANDS_QUEUES):
+        try:
+            q.put_nowait(entry)
+        except asyncio.QueueFull:
+            pass
 
 
 def devtools_track_ha_command(device_id: str, sber_command: dict, ha_service_call: dict) -> None:
@@ -503,7 +571,8 @@ class SberDevReconnectView(HomeAssistantView):
     """Принудительное переподключение к MQTT брокеру.
 
     POST /api/sber_mqtt/dev/reconnect
-    Отключается от брокера и подключается заново с теми же учётными данными.
+    Останавливает автопереподключение, отключается от брокера и подключается заново.
+    Если переподключение не удалось — запускает автопереподключение.
     Возвращает обновлённый connection_info после попытки подключения.
     """
 
@@ -522,7 +591,16 @@ class SberDevReconnectView(HomeAssistantView):
 
         mqtt_client = data["mqtt_client"]
         _LOGGER.info("DevTools: принудительное переподключение к MQTT")
+        
+        # Останавливаем автопереподключение перед ручным
+        mqtt_client.stop_auto_reconnect()
+        
         ok = await hass.async_add_executor_job(mqtt_client.reconnect)
+        
+        # Если не удалось — запускаем автопереподключение
+        if not ok:
+            _LOGGER.warning("DevTools: переподключение не удалось, запускаем автопереподключение")
+            mqtt_client.start_auto_reconnect()
 
         info = mqtt_client.connection_info
         info["reconnect_ok"] = ok

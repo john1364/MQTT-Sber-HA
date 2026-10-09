@@ -23,10 +23,13 @@ from .const import (
     DEVICE_TYPE_HUMIDIFIER,
     DEVICE_TYPE_SMOKE,
     DEVICE_TYPE_KETTLE,
+    DEVICE_TYPE_TV,
+    DEVICE_TYPE_AIR_PURIFIER,
     SUPPORTED_DEVICE_TYPES,
 )
 from .api_common import _get_entry_data, _slugify
 from .state_builder import build_current_state_payload
+from .ha_helpers import tv_features_from_supported
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -201,14 +204,98 @@ class SberDevicesView(HomeAssistantView):
                 return web.json_response(
                     {"error": "attributes.entity_id is required for kettle"}, status=400
                 )
-            # Подтягиваем min_temp/max_temp из water_heater для allowed_values
-            if "min_temp" not in attrs:
-                ks = hass.states.get(attrs["entity_id"])
-                if ks:
-                    if ks.attributes.get("min_temp") is not None:
-                        attrs["min_temp"] = ks.attributes["min_temp"]
-                    if ks.attributes.get("max_temp") is not None:
-                        attrs["max_temp"] = ks.attributes["max_temp"]
+
+            # Сбер не присылает команды с явными именами вроде "boil" или
+            # "heat" — он шлёт только два поля состояния: on_off (BOOL) и
+            # kitchen_water_temperature_set (INTEGER, опционально).
+            # Из их комбинации ha_command_handler вычисляет намерение:
+            #   on_off отсутствует/false          → выключить
+            #   on_off=true, temp=100 или не задан → вскипятить
+            #   on_off=true, temp<100              → нагреть до temp
+            # Получаются ровно три сценария, и для каждого нужно знать,
+            # какому значению operation_list конкретного чайника он
+            # соответствует (у разных моделей разные названия режимов).
+            # Поэтому пользователь обязан сопоставить их при добавлении
+            # устройства. off_mode и boil_mode обязательны, heat_mode
+            # опционален — если у чайника нет отдельного режима нагрева
+            # до заданной температуры, используется boil_mode.
+            off_mode  = (attrs.get("off_mode")  or "").strip()
+            boil_mode = (attrs.get("boil_mode") or "").strip()
+            heat_mode = (attrs.get("heat_mode") or "").strip()
+
+            if not off_mode:
+                return web.json_response(
+                    {"error": "attributes.off_mode is required for kettle "
+                              "(выберите команду «Выключить» из operation_list устройства)"},
+                    status=400,
+                )
+            if not boil_mode:
+                return web.json_response(
+                    {"error": "attributes.boil_mode is required for kettle "
+                              "(выберите команду «Вскипятить» из operation_list устройства)"},
+                    status=400,
+                )
+
+            attrs["off_mode"]  = off_mode
+            attrs["boil_mode"] = boil_mode
+            if heat_mode:
+                attrs["heat_mode"] = heat_mode
+            else:
+                attrs.pop("heat_mode", None)
+
+            # Подтягиваем min_temp/max_temp/operation_list из water_heater
+            ks = hass.states.get(attrs["entity_id"])
+            if ks:
+                op_list = list(ks.attributes.get("operation_list", []) or [])
+                # Если у сущности известен operation_list — проверяем,
+                # что выбранные режимы действительно в нём есть.
+                if op_list:
+                    for field_name, value in (
+                        ("off_mode", off_mode),
+                        ("boil_mode", boil_mode),
+                        ("heat_mode", heat_mode) if heat_mode else (None, None),
+                    ):
+                        if field_name and value not in op_list:
+                            return web.json_response(
+                                {"error": f"attributes.{field_name} = '{value}' "
+                                          f"не найден в operation_list устройства {attrs['entity_id']}: {op_list}"},
+                                status=400,
+                            )
+                if "min_temp" not in attrs and ks.attributes.get("min_temp") is not None:
+                    attrs["min_temp"] = ks.attributes["min_temp"]
+                if "max_temp" not in attrs and ks.attributes.get("max_temp") is not None:
+                    attrs["max_temp"] = ks.attributes["max_temp"]
+        elif device_type == DEVICE_TYPE_TV:
+            entity_id = attrs.get("entity_id", "")
+            if not entity_id:
+                return web.json_response(
+                    {"error": "attributes.entity_id is required for tv"}, status=400
+                )
+            if not entity_id.startswith("media_player."):
+                return web.json_response(
+                    {"error": "tv requires a media_player entity"}, status=400
+                )
+
+            # Набор функций ТВ в Сбере (mute / volume_int / volume) определяется
+            # тем, что умеет сущность. Фиксируем флаги при добавлении, чтобы
+            # конфиг не менялся от того, включён ли телевизор в данный момент.
+            # Если состояния нет (интеграция ТВ ещё не загрузилась) — считаем,
+            # что поддерживается всё.
+            ts = hass.states.get(entity_id)
+            if ts:
+                flags = tv_features_from_supported(ts.attributes.get("supported_features"))
+            else:
+                flags = {
+                    "supports_volume_set":  True,
+                    "supports_mute":        True,
+                    "supports_volume_step": True,
+                }
+            for flag_name, flag_val in flags.items():
+                attrs.setdefault(flag_name, flag_val)
+        elif device_type == DEVICE_TYPE_AIR_PURIFIER:
+            error = _validate_air_purifier_attrs(attrs)
+            if error:
+                return web.json_response({"error": error}, status=400)
 
         # Формируем запись устройства
         device_entry = {
@@ -522,3 +609,77 @@ class SberSettingsView(HomeAssistantView):
         if handler := data.get("command_handler"):
             handler.set_user_id(user_id)
         return web.json_response({"ok": True, "user_id": user_id})
+def _validate_air_purifier_attrs(attrs: dict) -> str | None:
+    """Проверяет и нормализует (на месте) настройки очистителя воздуха.
+
+    Возвращает текст ошибки или None. Пустые значения удаляются, чтобы
+    незаполненный слот не считался заданным.
+    """
+    from .const import (
+        AIR_PURIFIER_BOOL_FEATURES,
+        AIR_PURIFIER_POWER_DOMAINS,
+        AIR_PURIFIER_REPLACE_FEATURES,
+        AIR_PURIFIER_SELECT_DOMAINS,
+        AIR_PURIFIER_SPEED_VALUES,
+    )
+
+    def _domain(eid: str) -> str:
+        return eid.split(".", 1)[0] if eid else ""
+
+    power = attrs.get("entity_id", "")
+    if not power:
+        return "attributes.entity_id is required for air_purifier"
+    if _domain(power) not in AIR_PURIFIER_POWER_DOMAINS:
+        return "air_purifier power entity must be switch, input_boolean or fan"
+
+    # Скорость вентилятора: select + сопоставление значений Сбера опциям select
+    if attrs.get("speed_entity"):
+        if _domain(attrs["speed_entity"]) not in AIR_PURIFIER_SELECT_DOMAINS:
+            return "speed_entity must be select or input_select"
+        raw = attrs.get("speed_map")
+        raw = raw if isinstance(raw, dict) else {}
+        smap = {
+            k: str(v) for k, v in raw.items()
+            if k in AIR_PURIFIER_SPEED_VALUES and v not in (None, "")
+        }
+        if not smap:
+            return "speed_map must map at least one Sber speed to a select option"
+        attrs["speed_map"] = smap
+    else:
+        attrs.pop("speed_entity", None)
+        attrs.pop("speed_map", None)
+
+    # Булевые режимы: switch/input_boolean либо select с опциями «вкл» / «выкл»
+    for name in AIR_PURIFIER_BOOL_FEATURES:
+        eid = attrs.get(f"{name}_entity")
+        if not eid:
+            for suffix in ("entity", "on_option", "off_option"):
+                attrs.pop(f"{name}_{suffix}", None)
+            continue
+        if _domain(eid) in AIR_PURIFIER_SELECT_DOMAINS:
+            if not attrs.get(f"{name}_on_option") or not attrs.get(f"{name}_off_option"):
+                return f"{name}: on_option and off_option are required for select entity"
+        else:
+            attrs.pop(f"{name}_on_option", None)
+            attrs.pop(f"{name}_off_option", None)
+
+    # «Нужно менять»: binary_sensor либо числовой sensor с порогом
+    for name in AIR_PURIFIER_REPLACE_FEATURES:
+        eid = attrs.get(f"{name}_entity")
+        if not eid:
+            for suffix in ("entity", "threshold", "cmp"):
+                attrs.pop(f"{name}_{suffix}", None)
+            continue
+        if _domain(eid) == "sensor":
+            try:
+                attrs[f"{name}_threshold"] = float(attrs.get(f"{name}_threshold"))
+            except (ValueError, TypeError):
+                return f"{name}: numeric threshold is required for sensor entity"
+            attrs[f"{name}_cmp"] = "ge" if attrs.get(f"{name}_cmp") == "ge" else "le"
+        else:
+            attrs.pop(f"{name}_threshold", None)
+            attrs.pop(f"{name}_cmp", None)
+
+    if not attrs.get("online_entity"):
+        attrs.pop("online_entity", None)
+    return None

@@ -36,6 +36,10 @@ from .const import (
     DEVICE_TYPE_INTERCOM,
     DEVICE_TYPE_SENSOR_PIR,
     DEVICE_TYPE_EVENT_BUTTON,
+    DEVICE_TYPE_AIR_PURIFIER,
+    TV_OFF_STATES,
+    AIR_PURIFIER_BOOL_FEATURES,
+    AIR_PURIFIER_REPLACE_FEATURES,
 )
 
 if TYPE_CHECKING:
@@ -374,22 +378,6 @@ def build_current_state_payload(
                     pass
         return serializer.build_hvac_fan_state_payload(device_id, is_on, air_flow_power)
 
-    # ── Телевизор ───────────────────────────────────────────────────────
-    if device_type == DEVICE_TYPE_TV:
-        entity_id = attrs.get("entity_id", "")
-        ts = hass.states.get(entity_id)
-        if not ts:
-            return None
-        is_on = ts.state != "off"
-        vol = ts.attributes.get("volume_level")
-        if vol is not None:
-            try:
-                vol = float(vol) * 100
-            except (ValueError, TypeError):
-                vol = None
-        is_muted = ts.attributes.get("is_volume_muted")
-        src = ts.attributes.get("source")
-        return serializer.build_tv_state_payload(device_id, is_on, vol, is_muted, src)
 
     # ── Домофон ─────────────────────────────────────────────────────────
     if device_type == DEVICE_TYPE_INTERCOM:
@@ -435,6 +423,59 @@ def build_current_state_payload(
             device_id, is_on, current_temp, target_temp,
             water_level=_sensor_float(hass, attrs.get("water_entity")),
             water_low=_sensor_bool(hass, attrs.get("water_low_entity")),
+        )
+
+    # ── Телевизор ────────────────────────────────────────────────────────
+    if device_type == DEVICE_TYPE_TV:
+        entity_id = attrs.get("entity_id", "")
+        tvs = hass.states.get(entity_id)
+        if not tvs:
+            return None
+
+        # media_player: off/standby → выключен, всё остальное → включён
+        is_on = tvs.state not in TV_OFF_STATES and tvs.state not in ("unavailable", "unknown")
+
+        # Громкость (volume_level 0.0–1.0 → 0–100) и mute передаём только если
+        # эти функции объявлены в конфиге и атрибут реально есть у сущности
+        # (у выключенного ТВ атрибутов громкости часто нет).
+        volume: int | None = None
+        if attrs.get("supports_volume_set", True):
+            level = _safe_float(tvs, "volume_level")
+            if level is not None:
+                volume = round(max(0.0, min(1.0, level)) * 100)
+
+        muted: bool | None = None
+        if attrs.get("supports_mute", True):
+            raw_muted = tvs.attributes.get("is_volume_muted")
+            if isinstance(raw_muted, bool):
+                muted = raw_muted
+
+        return serializer.build_tv_state_payload(device_id, is_on, volume, muted)
+
+    # ── Очиститель воздуха ───────────────────────────────────────────────
+    if device_type == DEVICE_TYPE_AIR_PURIFIER:
+        from . import air_purifier as ap
+
+        if not hass.states.get(attrs.get("entity_id", "")):
+            return None
+
+        # Только те функции, которым сопоставлена сущность (как в конфиге модели)
+        bool_states: dict[str, bool] = {}
+        for name, sber_key in AIR_PURIFIER_BOOL_FEATURES.items():
+            value = ap.bool_feature_state(hass, attrs, name)
+            if value is not None:
+                bool_states[sber_key] = value
+        for name, sber_key in AIR_PURIFIER_REPLACE_FEATURES.items():
+            value = ap.replace_state(hass, attrs, name)
+            if value is not None:
+                bool_states[sber_key] = value
+
+        return serializer.build_air_purifier_state_payload(
+            device_id,
+            is_on=ap.power_state(hass, attrs),
+            online=ap.online_state(hass, attrs),
+            air_flow_power=ap.speed_state(hass, attrs),
+            bool_states=bool_states,
         )
 
     # ── Увлажнитель воздуха ──────────────────────────────────────────────
